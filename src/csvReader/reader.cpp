@@ -22,7 +22,7 @@ bool Reader::readFromFile(const std::string& filename) {
     
     // 读取CSV文件的每一行
     while (std::getline(file, line)) {
-        std::vector<int> row;
+        std::vector<double> row;
         std::stringstream lineStream(line);
         std::string cell;
         size_t colCount = 0;
@@ -52,7 +52,7 @@ bool Reader::readFromFile(const std::string& filename) {
     return true;
 }
 
-const std::vector<std::vector<int>>& Reader::getData() const {
+const std::vector<std::vector<double>>& Reader::getData() const {
     return data;
 }
 

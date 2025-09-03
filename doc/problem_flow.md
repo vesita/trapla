@@ -3,7 +3,7 @@
 ## 问题定义与解决方案设计流程图
 
 ```mermaid
-graph TD
+graph LR
     A[问题定义] --> B[状态空间建模]
     B --> C[动作空间建模]
     C --> D[约束条件建模]
@@ -141,3 +141,83 @@ graph TD
 
 - 验证路径的全局可行性
 - 优化步态序列以提高效率
+
+## A* 算法使用说明
+
+## 简介
+
+A*（A-Star）算法是一种常用的路径搜索算法，用于在图中找到从起点到终点的最优路径。它结合了Dijkstra算法的准确性和贪心最佳优先搜索的效率。
+
+## 算法原理
+
+A*算法使用一个启发式函数来指导搜索过程，通过评估函数f(n) = g(n) + h(n)来选择节点：
+
+- g(n)：从起点到节点n的实际代价
+- h(n)：从节点n到终点的估计代价（启发式函数）
+- f(n)：从起点经过节点n到终点的总估计代价
+
+## 使用示例
+
+以下是如何使用我们实现的A*算法的示例：
+
+```cpp
+#include "aStar/aStar.hpp"
+#include "aStar/graph.hpp"
+
+int main() {
+    // 创建图
+    Graph graph;
+    graph.graph = {
+        {1, 1, 1, 1, 1},
+        {1, 0, 1, 0, 1},
+        {1, 0, 1, 0, 1},
+        {1, 1, 1, 0, 1},
+        {1, 1, 1, 1, 1}
+    }; // 0表示障碍物，其他数字表示通过该点的代价
+    
+    // 创建A*算法实例
+    AStar astar(graph);
+    
+    // 定义起点和终点
+    Point start(0, 0);
+    Point goal(4, 4);
+    
+    // 查找路径
+    std::vector<Point> path = astar.findPath(start, goal);
+    
+    // 输出路径
+    if (!path.empty()) {
+        std::cout << "找到路径：" << std::endl;
+        for (const Point& p : path) {
+            std::cout << "(" << p.x << ", " << p.y << ")" << std::endl;
+        }
+    } else {
+        std::cout << "未找到路径！" << std::endl;
+    }
+    
+    return 0;
+}
+```
+
+## 代码结构
+
+- [aStar.hpp](file:///f:/library/Code/trapla/include/aStar/aStar.hpp)：A*算法的头文件，包含Point和Node结构体以及AStar类的定义
+- [aStar.cpp](file:///f:/library/Code/trapla/src/aStar/aStar.cpp)：A*算法的具体实现
+- [graph.hpp](file:///f:/library/Code/trapla/include/aStar/graph.hpp)：图的定义
+
+## 算法特点
+
+1. **最优性**：在启发式函数满足一定条件下，A*算法能够保证找到最优路径
+2. **完整性**：只要存在解，A*算法就能够找到解
+3. **时间复杂度**：取决于启发式函数的质量，最坏情况下为O(b^d)，其中b是分支因子，d是解的深度
+4. **空间复杂度**：O(b^d)，需要保存所有生成的节点
+
+## 启发式函数
+
+本实现使用欧几里得距离作为启发式函数：
+
+```math
+h(n) = sqrt((x1-x2)² + (y1-y2)²)
+```
+
+根据具体应用场景，也可以选择其他启发式函数，如曼哈顿距离等。

@@ -13,14 +13,14 @@ public:
     bool readFromFile(const std::string& filename);
     
     // 获取读取到的数据
-    const std::vector<std::vector<int>>& getData() const;
+    const std::vector<std::vector<double>>& getData() const;
     
     // 获取数据的行数和列数
     size_t getRows() const;
     size_t getCols() const;
 
 private:
-    std::vector<std::vector<int>> data;
+    std::vector<std::vector<double>> data;
     size_t rows;
     size_t cols;
 };

@@ -3,7 +3,7 @@ from PIL import Image
 import csv
 import os
 
-def jpg_to_csv(input_path='../../data/input/map.jpg', output_path='../../data/output/map.csv'):
+def jpg_to_csv(input_path='../../data/input/map.jpg', output_path='../../data/csv/map.csv'):
     """
     将JPEG格式的地图转换为CSV格式
     
@@ -40,7 +40,7 @@ def jpg_to_csv(input_path='../../data/input/map.jpg', output_path='../../data/ou
     print(f"最小高度值: {data.min()}")
     print(f"最大高度值: {data.max()}")
 
-def csv_to_jpg(input_path='../../data/output/map.csv', output_path='../../data/output/map_from_csv.jpg'):
+def csv_to_jpg(input_path='../../data/csv/map.csv', output_path='../../data/output/map_from_csv.jpg'):
     """
     将CSV格式的地图转换回JPEG格式（用于验证）
     

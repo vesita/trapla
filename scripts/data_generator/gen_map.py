@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image
+import os
 
 def generate_terrain_map():
     # 定义高度值
@@ -32,11 +33,15 @@ def generate_terrain_map():
     I = np.clip(I, 0, 255)
     I = I.astype(np.uint8)
     
+    # 确保输出目录存在
+    output_dir = '../../data/input'
+    os.makedirs(output_dir, exist_ok=True)
+    
     # 保存为JPEG图像
     img = Image.fromarray(I)
-    img.save('map.jpg', 'JPEG')
+    img.save(os.path.join(output_dir, 'map.jpg'), 'JPEG')
     
-    print("地形图已生成并保存为 map.jpg")
+    print("地形图已生成并保存为 ../data/input/map.jpg")
 
 if __name__ == "__main__":
     generate_terrain_map()
