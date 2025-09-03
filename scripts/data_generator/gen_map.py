@@ -1,0 +1,42 @@
+import numpy as np
+from PIL import Image
+
+def generate_terrain_map():
+    # 定义高度值
+    h0 = 30
+    h1 = h0 + h0      # 60
+    h2 = h1 + h0      # 90
+    h3 = h2 + h0      # 120
+    h4 = h3 - h0      # 90
+    h5 = h4 - h0      # 60
+    h6 = h5 - h0      # 30
+    
+    # 创建1000x3000的矩阵
+    I = np.ones((1000, 3000))
+    
+    # 设置不同区域的高度
+    I[:, 0:1000] = h0           # 第一区域: 高度30
+    I[:, 1000:1060] = h1        # 第二区域: 高度60
+    I[:, 1060:1120] = h2        # 第三区域: 高度90
+    I[:, 1120:1300] = h3        # 第四区域: 高度120
+    I[:, 1300:1500] = h4        # 第五区域: 高度90
+    I[:, 1500:2000] = h5        # 第六区域: 高度60
+    I[:, 2000:3000] = h6        # 第七区域: 高度30
+    
+    # 添加高斯白噪声
+    noise = np.random.randn(1000, 3000)
+    I = I + noise
+    
+    # 转换为uint8类型并保存为JPEG图像
+    # 确保值在0-255范围内
+    I = np.clip(I, 0, 255)
+    I = I.astype(np.uint8)
+    
+    # 保存为JPEG图像
+    img = Image.fromarray(I)
+    img.save('map.jpg', 'JPEG')
+    
+    print("地形图已生成并保存为 map.jpg")
+
+if __name__ == "__main__":
+    generate_terrain_map()
