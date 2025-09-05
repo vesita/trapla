@@ -39,13 +39,54 @@ make
 ./trapla
 ```
 
+## 测试
+
+项目包含单元测试，可以通过以下方式运行：
+
+### Windows系统
+
+```cmd
+scripts\platform\windows\run_tests.bat
+```
+
+### Linux/macOS系统
+
+```bash
+python3 scripts/run_tests.py
+```
+
+测试脚本会自动：
+
+1. 生成测试地图数据
+2. 将JPEG格式转换为CSV格式
+3. 配置项目（CMake）
+4. 编译测试可执行文件
+5. 运行测试
+
+测试成功的输出示例：
+
+```
+正在运行 1 个测试...
+
+正在运行测试: testFoot
+  结果: 通过
+
+测试套件执行完成。所有测试通过。
+```
+
 ## 项目结构
 
 - `src/` - 源代码目录
 - `include/` - 头文件目录
 - `data/` - 数据文件目录
 - `scripts/` - 辅助脚本目录
+  - `data_generator/` - 数据生成脚本
+  - `transor/` - 数据格式转换脚本
+  - `sync/` - 代码同步脚本
+  - `platform/` - 平台相关脚本
+    - `windows/` - Windows平台脚本
 - `doc/` - 文档目录
+- `tests/` - 测试文件目录
 
 ## 主要组件
 

@@ -181,6 +181,67 @@ def get_sync_branch_name():
         username = getpass.getuser()
     return f"sync-of-{username}"
 
+def list_remote_sync_branches():
+    """列出所有远程sync-of-*分支"""
+    returncode, stdout, stderr = run_command("git branch -r")
+    if returncode != 0:
+        return []
+    
+    branches = stdout.strip().split('\n')
+    sync_branches = []
+    for branch in branches:
+        branch = branch.strip()
+        if branch.startswith('origin/sync-of-'):
+            # 提取不带origin/前缀的分支名
+            branch_name = branch.replace('origin/', '')
+            sync_branches.append(branch_name)
+    
+    return sync_branches
+
+def select_sync_branch(default_branch):
+    """让用户选择同步分支"""
+    sync_branches = list_remote_sync_branches()
+    
+    # 如果没有远程sync分支，直接返回默认分支
+    if not sync_branches:
+        return default_branch
+    
+    # 将默认分支放在列表的开头
+    if default_branch in sync_branches:
+        sync_branches.remove(default_branch)
+        sync_branches.insert(0, default_branch)
+    else:
+        # 如果默认分支不在列表中，则添加到开头
+        sync_branches.insert(0, default_branch)
+    
+    print("\n找到以下远程同步分支:")
+    for i, branch in enumerate(sync_branches, 1):
+        if branch == default_branch:
+            print(f"  {i}. {branch} (默认)")
+        else:
+            print(f"  {i}. {branch}")
+    
+    print(f"  {len(sync_branches) + 1}. 取消")
+    
+    while True:
+        try:
+            choice = input(f"\n请选择要同步的分支 (1-{len(sync_branches) + 1})，或直接按回车使用默认分支: ").strip()
+            if choice == "":
+                return default_branch
+            choice = int(choice)
+            if 1 <= choice <= len(sync_branches):
+                return sync_branches[choice - 1]
+            elif choice == len(sync_branches) + 1:
+                return None
+            else:
+                print(f"请输入 1 到 {len(sync_branches) + 1} 之间的数字")
+        except ValueError:
+            print("请输入有效的数字或直接按回车使用默认分支")
+
+def is_default_branch(branch_name, default_branch):
+    """判断是否为默认分支"""
+    return branch_name == default_branch
+
 def main():
     print("=== May 项目进度拉取脚本 ===")
     
@@ -197,13 +258,47 @@ def main():
     
     print(f"当前分支: {current_branch}")
     
-    # 获取同步分支名
-    sync_branch = get_sync_branch_name()
+    # 获取默认同步分支名
+    default_sync_branch = get_sync_branch_name()
     
     # 验证分支名
-    if not validate_branch_name(sync_branch):
-        print(f"错误: 同步分支名无效: {sync_branch}")
+    if not validate_branch_name(default_sync_branch):
+        print(f"错误: 默认同步分支名无效: {default_sync_branch}")
         sys.exit(1)
+    
+    # 获取远程更新
+    print("获取远程更新...")
+    returncode, stdout, stderr = fetch_updates()
+    if returncode != 0:
+        print("获取远程更新失败")
+        if returncode == -2:
+            print("获取远程更新超时，请检查网络连接")
+        else:
+            print(stderr)
+        sys.exit(1)
+    
+    # 检查默认分支是否存在
+    print(f"默认同步分支: {default_sync_branch}")
+    if remote_branch_exists(default_sync_branch):
+        # 默认分支存在，直接使用
+        sync_branch = default_sync_branch
+        print(f"默认分支存在，直接使用: {sync_branch}")
+    else:
+        # 默认分支不存在，让用户选择其他同步分支
+        print("默认分支不存在，可选择其他同步分支")
+        sync_branch = select_sync_branch(default_sync_branch)
+        
+        if sync_branch is None:
+            print("操作已取消")
+            sys.exit(0)
+        
+        # 检查所选分支是否存在
+        if not remote_branch_exists(sync_branch):
+            print(f"错误: 远程分支 {sync_branch} 不存在")
+            print("请确保在另一台电脑上运行了推送脚本 (put-sync.py)")
+            sys.exit(1)
+    
+    print(f"将使用同步分支: {sync_branch}")
     
     # 检查本地是否有未提交的更改
     local_has_changes = has_changes()
@@ -237,23 +332,6 @@ def main():
             sys.exit(1)
         
         print("本地更改已保存到备份分支，将继续同步远程更改")
-    
-    # 获取远程更新
-    print("获取远程更新...")
-    returncode, stdout, stderr = fetch_updates()
-    if returncode != 0:
-        print("获取远程更新失败")
-        if returncode == -2:
-            print("获取远程更新超时，请检查网络连接")
-        else:
-            print(stderr)
-        sys.exit(1)
-    
-    # 检查同步分支是否存在
-    if not remote_branch_exists(sync_branch):
-        print(f"错误: 远程分支 {sync_branch} 不存在")
-        print("请确保在另一台电脑上运行了推送脚本 (put-sync.py)")
-        sys.exit(1)
     
     # 创建本地跟踪分支
     print(f"检出同步分支: {sync_branch}")
@@ -294,19 +372,23 @@ def main():
         print(f"删除本地同步分支 {sync_branch} 失败")
         print(stderr)
     
-    # 删除远程同步分支
-    print("删除远程同步分支...")
-    returncode, stdout, stderr = delete_remote_branch(sync_branch)
-    if returncode != 0:
-        print(f"删除远程同步分支 {sync_branch} 失败")
-        if returncode == -2:
-            print("删除远程同步分支超时，请稍后手动删除")
+    # 只有当使用默认分支时才删除远程分支，防止删除他人的分支
+    if is_default_branch(sync_branch, default_sync_branch):
+        print("删除远程同步分支...")
+        returncode, stdout, stderr = delete_remote_branch(sync_branch)
+        if returncode != 0:
+            print(f"删除远程同步分支 {sync_branch} 失败")
+            if returncode == -2:
+                print("删除远程同步分支超时，请稍后手动删除")
+            else:
+                print(stderr)
+            print("您可以稍后手动执行以下命令删除远程分支:")
+            print(f"  git push origin --delete {sync_branch}")
         else:
-            print(stderr)
-        print("您可以稍后手动执行以下命令删除远程分支:")
-        print(f"  git push origin --delete {sync_branch}")
+            print(f"远程同步分支 {sync_branch} 已删除")
     else:
-        print(f"远程同步分支 {sync_branch} 已删除")
+        print(f"注意: 由于使用了非默认分支 {sync_branch}，不会自动删除远程分支")
+        print(f"如需手动删除，请运行: git push origin --delete {sync_branch}")
     
     print("\n进度同步完成！")
     print("工作区现在处于有更改但未提交的状态，与推送端推送前的状态一致。")
