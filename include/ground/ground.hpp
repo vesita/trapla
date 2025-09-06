@@ -9,7 +9,6 @@ class Ground;
 #include <algorithm>
 
 #include "csvReader/reader.hpp"
-#include "aStar/graph.hpp"
 #include "robot/foot.hpp"
 #include "utils/geometry.hpp"
 
@@ -32,30 +31,44 @@ public:
      * @brief 通过指定区域的点计算最优平面
      * @param area 包含地面点坐标的向量
      * @return 表示最优平面的CuPlain对象
+     * 
+     * @details 该方法使用三点迭代算法计算最优平面：
+     *          1. 将输入的点按照高度排序
+     *          2. 选择初始的三个点定义初始平面
+     *          3. 遍历剩余的点，如果发现有更优的点组合，
+     *             则用该点替换当前平面的一个点并重新计算平面
+     *          4. 返回最终的最优平面
      */
-    CuPlain trip(std::vector<Point>& area);
+    CuPlain trip(std::vector<SqDot>& area);
     
     /**
      * @brief 通过指定区域的点计算最优平面的法线
      * @param area 包含地面点坐标的向量
      * @return 表示最优平面法线的CuDot对象
      */
-    CuDot normal(std::vector<Point>& area);
+    CuDot normal(std::vector<SqDot>& area);
     
     /**
      * @brief 通过指定区域的点计算凸面（未实现）
      * @param area 包含地面点坐标的向量
      * @return 表示凸面的CuPlain对象
      */
-    CuPlain convex_trip(std::vector<Point>& area);
+    CuPlain convex_trip(std::vector<SqDot>& area);
     
     /**
      * @brief 计算指定区域的站立角度
      * @param area 包含地面点坐标的向量
      * @return 区域的站立角度（弧度）
+     * 
+     * @details 站立角度是指区域最优平面法向量与z轴（重力方向）的夹角。
+     *          该角度用于评估足部放置的稳定性，角度越小表示越稳定。
      */
-    double stand_angle(std::vector<Point>& area);
+    double stand_angle(std::vector<SqDot>& area);
 
+    /**
+     * @brief 获取地面地图的尺寸
+     * @return 包含行数和列数的数组
+     */
     std::array<int, 2> shape() const;
 };
 

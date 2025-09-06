@@ -3,8 +3,15 @@
 
 #include <vector>
 #include <array>
+#include <queue>
+#include <unordered_map>
+#include <unordered_set>
+#include <functional>
+#include <limits>
+#include <algorithm>
+#include <cmath>
 
-#include "aStar/graph.hpp"
+#include "utils/geometry.hpp"
 
 /**
  * @brief 计算两点间的曼哈顿距离（L1距离）
@@ -16,7 +23,7 @@
  * @param b 点B坐标
  * @return 曼哈顿距离值
  */
-double manhattan_distance(Point a, Point b);
+double manhattan_distance(SqDot a, SqDot b);
 
 /**
  * @brief 计算两点间的欧几里得距离（L2距离）
@@ -28,7 +35,7 @@ double manhattan_distance(Point a, Point b);
  * @param b 点B坐标
  * @return 欧几里得距离值
  */
-double euclidean_distance(Point a, Point b);
+double euclidean_distance(SqDot a, SqDot b);
 
 /**
  * @brief A*寻路算法实现
@@ -41,10 +48,9 @@ double euclidean_distance(Point a, Point b);
  * @param graph 地图图结构，包含障碍物信息和节点连接关系
  * @param start 起始点坐标
  * @param goal  目标点坐标
- * @return 包含路径x坐标和y坐标的数组，格式为{{x1,x2,...}, {y1,y2,...}}
- *         如果未找到路径，则返回两个空向量
+ * @return 包含路径点坐标的vector<SqDot>
+ *         如果未找到路径，则返回空vector
  */
-std::array<std::vector<double>, 2> a_star_search(Graph& graph,
-    Point start, Point goal);
+std::vector<SqDot> a_star_search(SqPlain& graph, SqDot start, SqDot goal);
 
 #endif

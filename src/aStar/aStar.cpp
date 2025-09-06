@@ -1,14 +1,5 @@
 #include "aStar/aStar.hpp"
-
-#include <queue>
-#include <vector>
-#include <unordered_map>
-#include <unordered_set>
-#include <functional>
-#include <limits>
-#include <algorithm>
-#include <cmath>
-
+#include "utils/geometry.hpp"
 
 /**
  * @brief 计算两点间的曼哈顿距离（L1距离）
@@ -20,7 +11,7 @@
  * @param b 点B坐标
  * @return 曼哈顿距离值
  */
-double manhattan_distance(Point a, Point b) {
+double manhattan_distance(SqDot a, SqDot b) {
     return std::abs(a.x - b.x) + std::abs(a.y - b.y);
 }
 
@@ -34,8 +25,8 @@ double manhattan_distance(Point a, Point b) {
  * @param b 点B坐标
  * @return 欧几里得距离值
  */
-double euclidean_distance(Point a, Point b) {
-    return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+double euclidean_distance(SqDot a, SqDot b) {
+    return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
 /**
@@ -49,100 +40,96 @@ double euclidean_distance(Point a, Point b) {
  * @param graph 地图图结构，包含障碍物信息和节点连接关系
  * @param start 起始点坐标
  * @param goal  目标点坐标
- * @return 包含路径x坐标和y坐标的数组，格式为{{x1,x2,...}, {y1,y2,...}}
- *         如果未找到路径，则返回两个空向量
- * 
- * @details 算法主要步骤：
- *          1. 初始化起点，将其加入优先队列
- *          2. 当优先队列不为空时，取出f_score最小的节点
- *          3. 如果该节点是目标节点，则构建并返回路径
- *          4. 否则，遍历该节点的所有邻居节点
- *          5. 对于每个邻居节点，计算新的g_score（从起点到该邻居的代价）
- *          6. 如果该邻居节点是首次访问或者找到了更短的路径，则更新其代价并加入优先队列
- *          7. 重复步骤2-6直到找到目标节点或队列为空
- * 
- * @note 本实现使用曼哈顿距离作为启发式函数h(n)
- * @note 算法的时间复杂度为O(|E|log|V|)，其中|E|是边数，|V|是节点数
+ * @return 包含路径点坐标的vector<SqDot>
+ *         如果未找到路径，则返回空vector
  */
-std::array<std::vector<double>, 2> a_star_search(Graph& graph,
-    Point start, Point goal) {
-    
-    // 使用优先队列存储待访问节点，按照f_score升序排序（小顶堆）
-    // pair的第一个元素是f_score，第二个元素是节点位置
-    // 这里使用lambda表达式定义比较函数，实现小顶堆
-    auto cmp = [](const std::pair<double, Point>& a, const std::pair<double, Point>& b) {
-        return a.first > b.first; // Min-heap based on f_score
+std::vector<SqDot> a_star_search(SqPlain& graph, SqDot start, SqDot goal) {
+    // 自定义比较函数，用于优先队列排序
+    // 按照f_score排序（小顶堆），f_score相同时按点坐标排序
+    auto cmp = [](const std::pair<double, SqDot>& a, const std::pair<double, SqDot>& b) {
+        if (a.first != b.first) {
+            return a.first > b.first;  // f_score较小的优先
+        }
+        // f_score相同时，按坐标排序确保一致性
+        if (a.second.x != b.second.x) {
+            return a.second.x > b.second.x;
+        }
+        return a.second.y > b.second.y;
     };
-    std::priority_queue<std::pair<double, Point>, std::vector<std::pair<double, Point>>, 
-                        decltype(cmp)> frontier(cmp);
     
-    // 记录每个节点的来源节点，用于路径重构
-    std::unordered_map<Point, Point, PointHash> came_from;
-    // 记录从起点到每个节点的实际代价g(n)
-    std::unordered_map<Point, double, PointHash> cost_so_far;
-
+    // 优先队列，用于存储待访问的节点，按照f_score排序（小顶堆）
+    std::priority_queue<std::pair<double, SqDot>, 
+                        std::vector<std::pair<double, SqDot>>, 
+                        decltype(cmp)> open_set(cmp);
+    
+    // 存储每个节点的g_score（从起点到当前节点的实际代价）
+    std::unordered_map<SqDot, double, SqDotHash> g_score;
+    
+    // 存储每个节点的f_score（g_score + h_score，即预估总代价）
+    std::unordered_map<SqDot, double, SqDotHash> f_score;
+    
+    // 存储每个节点的前驱节点，用于路径重建
+    std::unordered_map<SqDot, SqDot, SqDotHash> came_from;
+    
+    // 记录已经访问过的节点
+    std::unordered_set<SqDot, SqDotHash> closed_set;
+    
     // 初始化起点
-    frontier.push({0, start});
-    came_from[start] = start;
-    cost_so_far[start] = 0;
-
-    // 路径点坐标
-    std::vector<double> path_x;
-    std::vector<double> path_y;
-
-    // A*主循环
-    while (!frontier.empty()) {
-        // 取出f_score最小的节点（根据优先队列的特性）
-        auto [current_f_score, current] = frontier.top();
-        frontier.pop();
-
-        // 如果到达目标点，则构建路径
+    g_score[start] = 0;
+    f_score[start] = euclidean_distance(start, goal);
+    open_set.push({f_score[start], start});
+    
+    // 主循环
+    while (!open_set.empty()) {
+        // 取出f_score最小的节点
+        SqDot current = open_set.top().second;
+        open_set.pop();
+        
+        // 如果到达终点，重建路径并返回
         if (current == goal) {
-            // 从目标点回溯到起点构建路径
-            std::vector<Point> path;
-            Point current_point = goal;
-            // 回溯路径直到起点
-            while (!(current_point == start)) {
-                path.push_back(current_point);
-                current_point = came_from[current_point];
+            std::vector<SqDot> path;
+            SqDot node = current;
+            while (came_from.find(node) != came_from.end()) {
+                path.push_back(node);
+                node = came_from[node];
             }
             path.push_back(start);
-            // 反转路径，使其从起点到终点
             std::reverse(path.begin(), path.end());
-
-            // 将路径点的坐标分别存储到两个向量中
-            for (const auto& point : path) {
-                path_x.push_back(static_cast<double>(point.x));
-                path_y.push_back(static_cast<double>(point.y));
-            }
-            break;
+            return path;
         }
-
-        // 遍历当前节点的邻居节点（上下左右四个方向）
-        for (int idx = 0; idx < 4; idx++) {
-            Point next = graph.get_neighbour(current, idx);
+        
+        // 将当前节点加入已访问集合
+        closed_set.insert(current);
+        
+        // 遍历当前节点的所有邻居
+        for (int i = 0; i < 4; i++) {
+            SqDot neighbor = graph.get_neighbour(current, i);
             
-            // 检查邻居节点是否允许通过（在地图范围内）
-            if (graph.point_allowed(next)) {
-                // 计算到达邻居节点的新代价
-                // 新代价 = 当前节点代价 + 移动到邻居节点的代价
-                // 对于不同类型的T，需要适当的转换为double类型
-                double move_cost = 1.0; // 默认移动代价（可扩展为从地图数据中获取）
-    
-                double new_cost = cost_so_far[current] + move_cost;
+            // 检查邻居是否可通行
+            if (!graph.edge_allowed(neighbor)) {
+                continue;
+            }
+            
+            // 如果邻居已经访问过，跳过
+            if (closed_set.find(neighbor) != closed_set.end()) {
+                continue;
+            }
+            
+            // 计算从起点到邻居的代价
+            double tentative_g_score = g_score[current] + graph.map[neighbor.x][neighbor.y];
+            
+            // 如果找到了更优的路径，或者首次访问该邻居
+            if (g_score.find(neighbor) == g_score.end() || tentative_g_score < g_score[neighbor]) {
+                came_from[neighbor] = current;
+                g_score[neighbor] = tentative_g_score;
+                f_score[neighbor] = g_score[neighbor] + euclidean_distance(neighbor, goal);
                 
-                // 如果是第一次访问该节点，或者找到了更短的路径
-                if (cost_so_far.find(next) == cost_so_far.end() || new_cost < cost_so_far[next]) {
-                    cost_so_far[next] = new_cost;
-                    // 计算启发式函数值（预计总代价 = 已花费代价 + 预计剩余代价）
-                    // 这里使用曼哈顿距离作为启发式函数h(n)
-                    double priority = new_cost + manhattan_distance(next, goal);
-                    frontier.push({priority, next});
-                    came_from[next] = current;
-                }
+                // 将邻居加入待访问队列
+                open_set.push({f_score[neighbor], neighbor});
             }
         }
     }
     
-    return {path_x, path_y};
+    // 未找到路径，返回空vector
+    return std::vector<SqDot>();
 }

@@ -1,6 +1,6 @@
 #include "robot/foot.hpp"
 #include "ground/ground.hpp"
-#include "aStar/graph.hpp"
+#include "utils/geometry.hpp"
 #include <iostream>
 
 
@@ -56,9 +56,9 @@ bool FootShape::inside(double l_side, double w_side) {
  *       y' = x*sin(θ) + y*cos(θ)
  *       其中θ为足部的旋转角度rz_of_foot
  */
-std::vector<Point> FootShape::cover(double& rz_of_foot) {
+std::vector<SqDot> FootShape::cover(double& rz_of_foot) {
     // 创建一个点集合，用于存储覆盖区域中的点并自动去重
-    std::unordered_set<Point, PointHash> point_set{};
+    std::unordered_set<SqDot, SqDotHash> point_set{};
     
     auto half_length = length / 2.0;
     auto half_width = width / 2.0;
@@ -76,15 +76,15 @@ std::vector<Point> FootShape::cover(double& rz_of_foot) {
             double world_w = l * sin(rz_of_foot) + w * cos(rz_of_foot);
 
             // 添加世界坐标系下的点到集合中，自动去重
-            point_set.insert(Point(static_cast<int>(round(world_l)), static_cast<int>(round(world_w))));
+            point_set.insert(SqDot(static_cast<int>(round(world_l)), static_cast<int>(round(world_w))));
         }
     }
     
     // 将集合转换为向量返回
-    return std::vector<Point>(point_set.begin(), point_set.end());
+    return std::vector<SqDot>(point_set.begin(), point_set.end());
 }
 
-SlideResult FootShape::slide(std::vector<Point>& area, Ground& ground) {
+SlideResult FootShape::slide(std::vector<SqDot>& area, Ground& ground) {
     // 获取地面规模信息
     auto shape = ground.shape();
     int rows = shape[0];
@@ -99,7 +99,7 @@ SlideResult FootShape::slide(std::vector<Point>& area, Ground& ground) {
     auto normal = ground.normal(area);
     
     // 获取滑动向量
-    Point slide_vector = normal.slide();
+    SqDot slide_vector = normal.slide();
     
     // 如果滑动向量为零，说明表面水平，无需滑动
     if (slide_vector.x == 0 && slide_vector.y == 0) {
@@ -110,15 +110,15 @@ SlideResult FootShape::slide(std::vector<Point>& area, Ground& ground) {
     double original_angle = ground.stand_angle(area);
     
     // 初始化最佳选择
-    Point best_slide_vector = slide_vector;
+    SqDot best_slide_vector = slide_vector;
     double best_angle = original_angle;
-    std::vector<Point> best_area = area;
+    std::vector<SqDot> best_area = area;
     bool found_better = false;
     
     // 尝试不同步长的正向滑动
     const int max_iterations = 3;
     for (int i = 1; i <= max_iterations; i++) {
-        std::vector<Point> new_area;
+        std::vector<SqDot> new_area;
         bool all_points_valid = true;
         
         for (const auto& point : area) {
@@ -130,7 +130,7 @@ SlideResult FootShape::slide(std::vector<Point>& area, Ground& ground) {
                 break;
             }
             
-            new_area.emplace_back(Point(new_x, new_y));
+            new_area.emplace_back(SqDot(new_x, new_y));
         }
         
         if (all_points_valid) {
@@ -151,9 +151,9 @@ SlideResult FootShape::slide(std::vector<Point>& area, Ground& ground) {
     }
     
     // 尝试不同步长的反向滑动
-    Point reverse_slide_vector(-slide_vector.x, -slide_vector.y);
+    SqDot reverse_slide_vector(-slide_vector.x, -slide_vector.y);
     for (int i = 1; i <= max_iterations; i++) {
-        std::vector<Point> new_area;
+        std::vector<SqDot> new_area;
         bool all_points_valid = true;
         
         for (const auto& point : area) {
@@ -165,7 +165,7 @@ SlideResult FootShape::slide(std::vector<Point>& area, Ground& ground) {
                 break;
             }
             
-            new_area.emplace_back(Point(new_x, new_y));
+            new_area.emplace_back(SqDot(new_x, new_y));
         }
         
         if (all_points_valid) {

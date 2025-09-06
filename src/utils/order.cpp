@@ -16,7 +16,7 @@
  * 
  * @param points 点集的引用，函数将直接修改此点集的顺序
  */
-void co_clowise(std::vector<Point>& points) {
+void co_clowise(std::vector<SqDot>& points) {
     // 少于3个点无需排序
     if (points.size() < 3) return;
 
@@ -31,7 +31,7 @@ void co_clowise(std::vector<Point>& points) {
     center_y /= points.size();
 
     // 按照相对于中心点的角度进行排序（逆时针）
-    std::sort(points.begin(), points.end(), [center_x, center_y](const Point& a, const Point& b) {
+    std::sort(points.begin(), points.end(), [center_x, center_y](const SqDot& a, const SqDot& b) {
         // 使用atan2计算角度，避免除法运算和无穷大问题
         // atan2返回值范围为[-π, π]，满足角度比较需求
         double angle_a = std::atan2(a.y - center_y, a.x - center_x);

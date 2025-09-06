@@ -65,7 +65,7 @@ python3 scripts/run_tests.py
 
 测试成功的输出示例：
 
-```
+```example
 正在运行 1 个测试...
 
 正在运行测试: testFoot

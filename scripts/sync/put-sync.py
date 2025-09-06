@@ -22,6 +22,10 @@ def is_git_repo():
     """检查当前目录是否为Git仓库"""
     return os.path.exists(".git")
 
+def get_project_name():
+    """获取项目目录名"""
+    return os.path.basename(os.getcwd())
+
 def get_current_branch():
     """获取当前分支名"""
     returncode, stdout, stderr = run_command("git branch --show-current")
@@ -164,7 +168,8 @@ def cleanup_on_failure(current_branch, sync_branch):
     print("清理完成")
 
 def main():
-    print("=== May 项目进度推送脚本 ===")
+    project_name = get_project_name()
+    print(f"=== {project_name}项目进度推送脚本 ===")
     
     # 检查是否在Git仓库中
     if not is_git_repo():

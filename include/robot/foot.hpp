@@ -7,8 +7,8 @@ class FootShape;
 #include <cmath>
 #include <unordered_set>
 
-#include "aStar/graph.hpp"
 #include "ground/ground.hpp"
+#include "utils/geometry.hpp"
 
 /**
  * @brief slide操作结果的枚举类型
@@ -54,9 +54,20 @@ public:
      * @param rz_of_foot 足部绕垂直轴的旋转角度(弧度)
      * @return 包含所有被足部覆盖的地面点坐标的向量
      */
-    std::vector<Point> cover(double& rz_of_foot);
+    std::vector<SqDot> cover(double& rz_of_foot);
 
-    SlideResult slide(std::vector<Point>& area, Ground& ground);
+    /**
+     * @brief 调整足部覆盖区域以提高稳定性
+     * @param area 足部当前覆盖的地面点区域
+     * @param ground 地面对象，包含地形高度信息
+     * @return SlideResult 操作结果枚举值
+     * 
+     * @details 该方法通过分析足部覆盖区域的地形数据，计算最优的接触平面，
+     *          并根据平面的倾斜角度决定是否需要调整足部位置以提高稳定性。
+     *          如果当前区域已经足够平坦，则不进行调整；
+     *          如果需要调整，则尝试在法线指示的方向上寻找更平坦的区域。
+     */
+    SlideResult slide(std::vector<SqDot>& area, Ground& ground);
 };
 
 /**

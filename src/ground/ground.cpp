@@ -24,7 +24,7 @@ Ground::Ground(std::string filename) {
  * @param area 包含地面点坐标的向量
  * @return 区域的站立角度（弧度）
  */
-double Ground::stand_angle(std::vector<Point>& area) {
+double Ground::stand_angle(std::vector<SqDot>& area) {
     CuPlain plaine = trip(area);
     return plaine.normal_angle();
 }
@@ -44,14 +44,14 @@ std::array<int, 2> Ground::shape() const {
  * @details 该函数通过以下步骤计算最优平面：
  *          1. 将输入的点转换为包含高度信息的三维点
  *          2. 按照z坐标（高度）对点进行排序
- *          3. 选择最高的三个点作为初始平面
- *          4. 遍历剩余的点，如果发现有更高的点在当前平面的上方，
+ *          3. 选择初始的三个点作为初始平面（使用更合理的方法）
+ *          4. 遍历剩余的点，如果发现有更优的点组合，
  *             则用该点替换当前平面的一个点并重新计算平面
  *          5. 返回最终的最优平面
  * 
- * @note 该算法的目标是找到一个尽可能贴近最高点的平面，用于评估足部放置的稳定性
+ * @note 该算法的目标是找到一个尽可能贴近所有点的平面，用于评估足部放置的稳定性
  */
-CuPlain Ground::trip(std::vector<Point>& area) { 
+CuPlain Ground::trip(std::vector<SqDot>& area) { 
     std::vector<CuDot> dots;
     for (const auto& point : area) {
         if (point.x < 0 || point.x >= map.size() || point.y < 0 || point.y >= map[0].size()) {
@@ -59,30 +59,142 @@ CuPlain Ground::trip(std::vector<Point>& area) {
         }
         dots.emplace_back(CuDot{static_cast<double>(point.x), static_cast<double>(point.y), map[point.x][point.y]});
     }
+    
+    if (dots.size() < 3) {
+        return CuPlain(); // 点数不足，无法定义平面
+    }
+    
+    // 如果只有三个点，直接使用它们定义平面
+    if (dots.size() == 3) {
+        std::array<CuDot, 3> results = {dots[0], dots[1], dots[2]};
+        CuPlain plaine;
+        plaine.define_plaine(results);
+        return plaine;
+    }
+    
     auto height_cmp = [](const CuDot& a, const CuDot& b) { return a.z < b.z; };
     std::sort(dots.begin(), dots.end(), height_cmp);
     
-    // 修复: 从排序后的vector中获取前三个元素(最高的三个点)
-    std::array<CuDot, 3> results = {
-        dots[dots.size() - 1], 
-        dots[dots.size() - 2], 
-        dots[dots.size() - 3]
-    };
-    for (auto count = 0; count < 3; count++) {
-        dots.pop_back();
-    }
-    CuPlain plaine;
-    plaine.define_plaine(results);
-    while (!dots.empty()) {
-        CuPos pos = plaine.get_pos(dots.back());
-        if (pos == CuPos::Above) {
-            results[0] = dots.back();
-            dots.pop_back();
-            plaine.define_plaine(results);
-        } else {
-            dots.pop_back();
+    // 选择初始三个点的更好策略：
+    // 1. 选择一个高点作为起点
+    // 2. 选择一个与第一点距离较远的点
+    // 3. 选择第三个点以最大化三角形面积
+    std::array<CuDot, 3> results;
+    results[0] = dots.back(); // 选择最高点
+    dots.pop_back();
+    
+    // 选择距离最高点最远的点作为第二个点
+    double max_dist_sq = -1;
+    size_t second_idx = 0;
+    for (size_t i = 0; i < dots.size(); i++) {
+        double dx = dots[i].x - results[0].x;
+        double dy = dots[i].y - results[0].y;
+        double dist_sq = dx * dx + dy * dy;
+        if (dist_sq > max_dist_sq) {
+            max_dist_sq = dist_sq;
+            second_idx = i;
         }
     }
+    results[1] = dots[second_idx];
+    dots.erase(dots.begin() + second_idx);
+    
+    // 选择第三个点以最大化三角形面积
+    double max_area = -1;
+    size_t third_idx = 0;
+    for (size_t i = 0; i < dots.size(); i++) {
+        // 使用叉积计算三角形面积
+        double ax = results[1].x - results[0].x;
+        double ay = results[1].y - results[0].y;
+        double bx = dots[i].x - results[0].x;
+        double by = dots[i].y - results[0].y;
+        double area = std::abs(ax * by - ay * bx);
+        if (area > max_area) {
+            max_area = area;
+            third_idx = i;
+        }
+    }
+    results[2] = dots[third_idx];
+    dots.erase(dots.begin() + third_idx);
+    
+    CuPlain plaine;
+    plaine.define_plaine(results);
+    
+    // 改进的迭代优化策略：
+    // 1. 不仅检查点是否在平面上方，还要考虑点到平面的距离
+    // 2. 使用更好的替换策略
+    bool changed = true;
+    const int max_iterations = 100; // 限制迭代次数防止无限循环
+    int iterations = 0;
+    
+    while (changed && !dots.empty() && iterations < max_iterations) {
+        changed = false;
+        iterations++;
+        
+        // 寻找对平面影响最大的点
+        double max_distance = 0;
+        int best_point_idx = -1;
+        CuPos best_point_pos;
+        
+        for (size_t i = 0; i < dots.size(); i++) {
+            double distance = plaine.distance(dots[i]);
+            CuPos pos = plaine.get_pos(dots[i]);
+            
+            // 只考虑在平面上方的点，并选择距离最大的点
+            if (pos == CuPos::Above && distance > max_distance) {
+                max_distance = distance;
+                best_point_idx = static_cast<int>(i);
+                best_point_pos = pos;
+            }
+        }
+        
+        // 如果找到合适的点，则进行替换优化
+        if (best_point_idx >= 0) {
+            // 尝试替换每个点，选择能使平面更好地拟合所有点的替换方案
+            double best_improvement = 0;
+            int best_replace_idx = -1;
+            
+            for (int i = 0; i < 3; i++) {
+                // 临时替换一个点
+                std::array<CuDot, 3> temp_results = results;
+                temp_results[i] = dots[best_point_idx];
+                
+                // 创建临时平面
+                CuPlain temp_plane;
+                temp_plane.define_plaine(temp_results);
+                
+                // 计算替换后的总误差改善
+                double original_error = 0;
+                double new_error = 0;
+                
+                // 计算所有点到原始平面和新平面的距离
+                for (const auto& dot : dots) {
+                    original_error += plaine.distance(dot);
+                    new_error += temp_plane.distance(dot);
+                }
+                
+                double improvement = original_error - new_error;
+                if (improvement > best_improvement) {
+                    best_improvement = improvement;
+                    best_replace_idx = i;
+                }
+            }
+            
+            // 如果有改善，则执行替换
+            if (best_replace_idx >= 0) {
+                results[best_replace_idx] = dots[best_point_idx];
+                dots.erase(dots.begin() + best_point_idx);
+                plaine.define_plaine(results);
+                changed = true;
+            } else {
+                // 如果没有改善，移除该点继续寻找
+                dots.erase(dots.begin() + best_point_idx);
+            }
+        } else {
+            // 没有更多在平面上方的点
+            break;
+        }
+    }
+    
     return plaine;
 }
 
@@ -91,7 +203,7 @@ CuPlain Ground::trip(std::vector<Point>& area) {
  * @param area 包含地面点坐标的向量
  * @return 表示最优平面法线的CuDot对象
  */
-CuDot Ground::normal(std::vector<Point>& area) {
+CuDot Ground::normal(std::vector<SqDot>& area) {
     CuPlain plaine = trip(area);
     return plaine.normal_vector();
 }
@@ -101,7 +213,7 @@ CuDot Ground::normal(std::vector<Point>& area) {
  * @param area 包含地面点坐标的向量
  * @return 表示凸面的CuPlain对象
  */
-CuPlain Ground::convex_trip(std::vector<Point>& area) { 
+CuPlain Ground::convex_trip(std::vector<SqDot>& area) { 
     // TODO: 实现convex_trip函数
     return CuPlain();
 }

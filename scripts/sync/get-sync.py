@@ -18,7 +18,15 @@ def run_command(command, timeout=30):
         return -2, "", f"命令执行超时: {command}"
     except Exception as e:
         return -1, "", str(e)
-        
+
+def is_git_repo():
+    """检查当前目录是否为Git仓库"""
+    return os.path.exists(".git")
+
+def get_project_name():
+    """获取项目目录名"""
+    return os.path.basename(os.getcwd())
+
 def get_previous_backup_branch():
     """获取上一次的备份分支"""
     returncode, stdout, stderr = run_command("git branch")
@@ -47,10 +55,6 @@ def create_backup_branch():
 def switch_branch(branch_name):
     """切换到指定分支"""
     return run_command(f"git switch {branch_name}")
-
-def is_git_repo():
-    """检查当前目录是否为Git仓库"""
-    return os.path.exists(".git")
 
 def get_current_branch():
     """获取当前分支名"""
@@ -243,7 +247,8 @@ def is_default_branch(branch_name, default_branch):
     return branch_name == default_branch
 
 def main():
-    print("=== May 项目进度拉取脚本 ===")
+    project_name = get_project_name()
+    print(f"=== {project_name}项目进度拉取脚本 ===")
     
     # 检查是否在Git仓库中
     if not is_git_repo():

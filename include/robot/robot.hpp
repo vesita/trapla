@@ -9,6 +9,7 @@ enum class WhichFoot;
 #include <unordered_set>
 
 #include "robot/foot.hpp"
+#include "utils/geometry.hpp"
 
 enum class WhichFoot { Left, Right };
 
@@ -38,9 +39,9 @@ public:
 
     void walk_update();
 
-    std::vector<Point> ideal_walk(const Ground& ground);
+    std::vector<SqDot> ideal_walk(const Ground& ground);
 
-    std::vector<Point> about_area(Point& target);
+    bool satisfy_foot_limits(const SqDot& new_pos);
 
     /**
      * @brief 获取摆动足（即将移动的脚）

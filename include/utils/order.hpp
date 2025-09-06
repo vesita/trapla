@@ -4,8 +4,8 @@
 #include <vector>
 #include <algorithm>
 
-#include "ground/ground.hpp"
+#include "utils/geometry.hpp"
 
-void co_clowise(std::vector<Point>& points);
+void co_clowise(std::vector<SqDot>& points);
 
 #endif
