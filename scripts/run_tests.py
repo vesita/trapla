@@ -85,20 +85,35 @@ def main():
     
     # 阶段 5: 运行单元测试
     print("\n=== 阶段 5: 运行单元测试 ===")
-    test_exe = os.path.join(build_dir, "foot_test")
-    if sys.platform == "win32":
-        test_exe += ".exe"
     
-    if not os.path.exists(test_exe):
-        print(f"❌ 测试可执行文件不存在: {test_exe}")
+    # 定义所有测试可执行文件
+    test_executables = ["foot_test", "aStar_test", "ground_test"]
+    
+    all_tests_passed = True
+    
+    for test_name in test_executables:
+        print(f"\n--- 运行 {test_name} 测试 ---")
+        test_exe = os.path.join(build_dir, test_name)
+        if sys.platform == "win32":
+            test_exe += ".exe"
+        
+        if not os.path.exists(test_exe):
+            print(f"❌ 测试可执行文件不存在: {test_exe}")
+            all_tests_passed = False
+            continue
+        
+        if not run_command(f"\"{test_exe}\""):
+            print(f"❌ {test_name} 测试运行失败")
+            all_tests_passed = False
+        else:
+            print(f"✅ {test_name} 测试通过")
+    
+    if all_tests_passed:
+        print("\n=== 所有测试通过 ===")
+        return 0
+    else:
+        print("\n=== 部分测试失败 ===")
         return 1
-    
-    if not run_command(f"\"{test_exe}\""):
-        print("❌ 单元测试运行失败，停止流程")
-        return 1
-    
-    print("\n=== 所有测试通过 ===")
-    return 0
 
 if __name__ == "__main__":
     # 设置标准输出和错误输出的编码

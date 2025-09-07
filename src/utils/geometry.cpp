@@ -6,20 +6,51 @@
 #include <queue>
 #include <functional>
 #include <limits>
+#include "utils/fast_flatness.hpp"
 
 /**
  * @brief 构造函数，创建一个点
  * @param x 点的x坐标，默认为0
  * @param y 点的y坐标，默认为0
+ * 
+ * @details 该构造函数用于创建一个二维整数坐标点，主要用于表示地图网格中的位置。
  */
 SqDot::SqDot(int x, int y): x(x), y(y) {
     return;
 }
 
 /**
+ * @brief 按比例缩放点坐标
+ * @param scale 缩放比例因子
+ * @return 缩放后的点坐标
+ * 
+ * @details 该方法用于地图缩放操作，将点坐标按指定比例进行缩放。
+ *          通常用于生成低分辨率的引导路径图。结果坐标会四舍五入到最近的整数。
+ */
+SqDot SqDot::scale(double scale) const {
+    return SqDot(static_cast<int>(std::round(x * scale)), static_cast<int>(std::round(y * scale)));
+}
+
+/**
+ * @brief 将缩放后的点坐标还原到原始地图坐标
+ * @param scale 缩放比例因子
+ * @param unit_size 单元格大小
+ * @return 还原后的点坐标
+ * 
+ * @details 该方法用于将低分辨率地图中的点坐标映射回原始高分辨率地图坐标。
+ *          通常在路径规划完成后，将引导点转换为实际落足点时使用。结果坐标会四舍五入到最近的整数。
+ */
+SqDot SqDot::central_restore(double scale, double unit_size) const {
+    return SqDot(static_cast<int>(std::round(x / scale + unit_size / 2.0 - 0.5)), 
+                static_cast<int>(std::round(y / scale + unit_size / 2.0 - 0.5)));
+}
+
+/**
  * @brief 重载相等运算符，判断两个点是否相同
  * @param other 另一个点
  * @return 如果两点坐标相同返回true，否则返回false
+ * 
+ * @details 该运算符用于比较两个点的坐标是否完全相等，主要用于STL容器操作和路径规划算法中。
  */
 bool SqDot::operator==(const SqDot& other) const {
     return x == other.x && y == other.y;
@@ -29,11 +60,27 @@ bool SqDot::operator==(const SqDot& other) const {
  * @brief 重载不等于运算符，判断两个点是否不同
  * @param other 另一个点
  * @return 如果两点坐标不同返回true，否则返回false
+ * 
+ * @details 该运算符用于比较两个点的坐标是否不相等，是[operator==](file:///F:/library/Code/trapla/src/utils/geometry.cpp#L28-L30)的补运算。
  */
 bool SqDot::operator!=(const SqDot& other) const {
     return !(*this == other);
 }
 
+/**
+ * @brief 重载小于运算符，用于优先队列排序
+ * @param other 另一个点
+ * @return 如果当前点小于另一个点返回true，否则返回false
+ * 
+ * @details 该运算符用于在基于排序的STL容器（如std::priority_queue）中对点进行排序。
+ *          排序规则是先比较x坐标，x坐标相等时再比较y坐标，确保排序的一致性和确定性。
+ */
+bool SqDot::operator<(const SqDot& other) const {
+    if (x != other.x) {
+        return x < other.x;
+    }
+    return y < other.y;
+}
 
 /**
  * @brief 计算SqDot对象的哈希值
@@ -53,6 +100,8 @@ std::size_t SqDotHash::operator()(const SqDot& p) const {
 SqPlain::SqPlain(std::vector<std::vector<double>> map): map(std::move(map)) {
     return;
 }
+
+SqPlain::SqPlain() {}
 
 /**
  * @brief 检查指定点是否在地图范围内且不是障碍物
@@ -180,8 +229,8 @@ std::vector<SqDot> SqPlain::find_path(SqDot start, SqDot goal) {
  */
 SqPlain SqPlain::scale_graph(double scale) {
     // 计算缩放后的地图尺寸
-    int new_rows = static_cast<int>(std::ceil(map.size() / scale));
-    int new_cols = static_cast<int>(std::ceil(map[0].size() / scale));
+    int new_rows = static_cast<int>(std::ceil(map.size() * scale));
+    int new_cols = static_cast<int>(std::ceil(map[0].size() * scale));
     
     // 创建新的地图
     std::vector<std::vector<double>> new_map(new_rows, std::vector<double>(new_cols, std::numeric_limits<double>::infinity()));
@@ -189,49 +238,68 @@ SqPlain SqPlain::scale_graph(double scale) {
     // 对每个新的单元格计算代价值
     for (int i = 0; i < new_rows; i++) {
         for (int j = 0; j < new_cols; j++) {
-            // 计算在原地图中对应的区域
-            int start_row = static_cast<int>(i * scale);
-            int end_row = static_cast<int>(std::min((i + 1) * scale, static_cast<double>(map.size())));
-            int start_col = static_cast<int>(j * scale);
-            int end_col = static_cast<int>(std::min((j + 1) * scale, static_cast<double>(map[0].size())));
+            // 计算在原地图中对应的区域中心点
+            SqDot center(static_cast<int>((i + 0.5) / scale), 
+                         static_cast<int>((j + 0.5) / scale));
             
-            // 在区域内寻找最小代价值
-            double min_cost = std::numeric_limits<double>::infinity();
-            for (int row = start_row; row < end_row; row++) {
-                for (int col = start_col; col < end_col; col++) {
-                    if (map[row][col] < min_cost) {
-                        min_cost = map[row][col];
-                    }
-                }
-            }
-            
-            // 将最小代价值赋给新的单元格
-            new_map[i][j] = min_cost;
+            // 使用快速平整度评估算法计算区域平整度
+            new_map[i][j] = summary(center, static_cast<int>(1.0 / scale));
         }
     }
     
     return SqPlain(std::move(new_map));
 }
 
-double SqPlain::summary(SqDot& center, int side_length) {
-    // 计算区域边界
-    int half_side = side_length / 2;
-    int start_row = std::max(0, center.x - half_side);
-    int end_row = std::min(static_cast<int>(map.size()) - 1, center.x + half_side);
-    int start_col = std::max(0, center.y - half_side);
-    int end_col = std::min(static_cast<int>(map[0].size()) - 1, center.y + half_side);
+SqPlain SqPlain::scale_graph_variance(double scale) {
+    int original_rows = map.size();
+    int original_cols = map[0].size();
     
-    // 计算区域内的最小代价值
-    double min_cost = std::numeric_limits<double>::infinity();
-    for (int i = start_row; i <= end_row; i++) {
-        for (int j = start_col; j <= end_col; j++) {
-            if (map[i][j] < min_cost) {
-                min_cost = map[i][j];
-            }
+    // 计算缩放后的地图尺寸
+    int scaled_rows = static_cast<int>(std::ceil(original_rows * scale));
+    int scaled_cols = static_cast<int>(std::ceil(original_cols * scale));
+    
+    // 初始化缩放后的地图
+    std::vector<std::vector<double>> scaled_map(scaled_rows, std::vector<double>(scaled_cols, 0.0));
+    
+    // 对于每个缩放后的单元格，计算其中所有原始单元格的方差作为cost的一个组成部分
+    for (int i = 0; i < scaled_rows; i++) {
+        for (int j = 0; j < scaled_cols; j++) {
+            // 计算在原地图中对应的区域中心点
+            SqDot center(static_cast<int>((i + 0.5) / scale), 
+                         static_cast<int>((j + 0.5) / scale));
+            
+            // 使用快速平整度评估算法计算区域平整度
+            scaled_map[i][j] = summary(center, static_cast<int>(1.0 / scale));
         }
     }
     
-    return min_cost;
+    return SqPlain(std::move(scaled_map));
+}
+
+double SqPlain::summary(SqDot& center, int side_length) {
+    // 使用快速平整度评估算法评估区域平整度
+    return FastFlatnessEvaluator::evaluate(*this, center, side_length);
+}
+
+bool SqPlain::empty() const {
+    return map.empty() || map[0].empty();
+}
+
+
+int SqPlain::rows() const {
+    return map.size();
+}
+
+int SqPlain::cols() const {
+    return map[0].size();
+}
+
+std::vector<double>& SqPlain::operator[](int index) {
+    return map[index];
+}
+
+const std::vector<double>& SqPlain::operator[](int index) const {
+    return map[index];
 }
 
 /**

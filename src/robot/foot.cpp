@@ -49,12 +49,8 @@ bool FootShape::inside(double l_side, double w_side) {
  *          去除重复点，最后将结果转换为std::vector返回。
  * 
  * @note 步长选择为0.5是为了在精度和计算效率之间取得平衡。较小的步长会提高精度
- *       但会增加计算量，较大的步长会降低精度但提高计算效率。
- * 
- * @note 坐标变换使用标准的二维旋转变换公式：
- *       x' = x*cos(θ) - y*sin(θ)
- *       y' = x*sin(θ) + y*cos(θ)
- *       其中θ为足部的旋转角度rz_of_foot
+ *       但会增加计算量，较大的步长会提高计算效率但可能遗漏边界点。
+ * @note 旋转角度以足部为中心点进行计算，使用标准的二维旋转矩阵进行坐标变换。
  */
 std::vector<SqDot> FootShape::cover(double& rz_of_foot) {
     // 创建一个点集合，用于存储覆盖区域中的点并自动去重
@@ -84,6 +80,32 @@ std::vector<SqDot> FootShape::cover(double& rz_of_foot) {
     return std::vector<SqDot>(point_set.begin(), point_set.end());
 }
 
+/**
+ * @brief 调整足部覆盖区域以提高稳定性
+ * @param area 足部当前覆盖的地面点区域
+ * @param ground 地面对象，包含地形高度信息
+ * @return SlideResult 操作结果枚举值
+ * 
+ * @details 该方法通过分析足部覆盖区域的地形数据，计算最优的接触平面，
+ *          并根据平面的倾斜角度决定是否需要调整足部位置以提高稳定性。
+ *          
+ *          算法流程：
+ *          1. 计算当前区域的最优接触平面和站立角度
+ *          2. 如果角度在可接受范围内，直接返回NoModification
+ *          3. 计算滑动向量，表示为了提高稳定性应该移动的方向
+ *          4. 尝试沿滑动方向移动不同步长，寻找更平坦的区域
+ *          5. 如果找到更平坦的区域，则更新area并返回Modified
+ *          6. 如果未找到更平坦的区域，则返回NoModification
+ *          
+ *          搜索策略：
+ *          - 首先尝试法线指示的正向滑动
+ *          - 如果正向滑动没有改善，则尝试反向滑动
+ *          - 最多尝试5次迭代，防止无限循环
+ *          
+ *          评估标准：
+ *          - 使用站立角度作为评估区域稳定性的指标
+ *          - 角度越小表示区域越平坦，足部越稳定
+ */
 SlideResult FootShape::slide(std::vector<SqDot>& area, Ground& ground) {
     // 获取地面规模信息
     auto shape = ground.shape();
@@ -216,13 +238,13 @@ void Foot::set(double x, double y, double rz) {
  */
 bool Foot::walkto(Ground& ground, FootShape& shape) { 
     // 检查地面数据是否为空
-    if (ground.map.empty() || ground.map[0].empty()) {
+    if (ground.empty()) {
         return false;
     }
     
     // 获取地面尺寸
-    int rows = ground.map.size();
-    int cols = ground.map[0].size();
+    int rows = ground.map.rows();
+    int cols = ground.map.cols();
     
     // 确保目标位置在地面范围内
     if (x < 0 || x >= rows || y < 0 || y >= cols) {

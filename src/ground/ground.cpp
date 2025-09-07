@@ -3,6 +3,12 @@
 /**
  * @brief 地面类构造函数，从指定文件读取地形数据
  * @param filename 包含地形高度数据的CSV文件路径
+ * 
+ * @details 该构造函数使用Reader类从CSV文件中读取地形高度数据，
+ *          并初始化地图和代价矩阵。如果读取失败，会输出错误信息并返回。
+ *          
+ * @note CSV文件应包含表示地形高度的数值数据，每个数值代表一个网格点的高度。
+ * @note 文件读取失败时不会抛出异常，而是通过输出错误信息提示用户。
  */
 Ground::Ground(std::string filename) {
     Reader reader;
@@ -30,10 +36,10 @@ double Ground::stand_angle(std::vector<SqDot>& area) {
 }
 
 std::array<int, 2> Ground::shape() const {
-    if (map.empty() || map[0].empty()) {
+    if (map.empty()) {
         return {0, 0};
     }
-    return {static_cast<int>(map.size()), static_cast<int>(map[0].size())};
+    return {static_cast<int>(map.rows()), static_cast<int>(map.cols())};
 }
 
 /**
@@ -48,13 +54,24 @@ std::array<int, 2> Ground::shape() const {
  *          4. 遍历剩余的点，如果发现有更优的点组合，
  *             则用该点替换当前平面的一个点并重新计算平面
  *          5. 返回最终的最优平面
- * 
- * @note 该算法的目标是找到一个尽可能贴近所有点的平面，用于评估足部放置的稳定性
+ *          
+ *          初始点选择策略：
+ *          - 首先选择最高点作为第一个点
+ *          - 然后选择与第一个点距离最远的点作为第二个点
+ *          - 最后选择能使三角形面积最大的点作为第三个点
+ *          
+ *          迭代优化策略：
+ *          - 遍历剩余点，寻找对平面拟合改善最大的点
+ *          - 使用点到平面的距离作为评估指标
+ *          - 限制最大迭代次数防止无限循环
+ *          
+ * @note 该算法假定输入区域至少包含3个点，否则无法定义平面。
+ * @note 算法复杂度为O(n²)，其中n为输入点的数量。
  */
 CuPlain Ground::trip(std::vector<SqDot>& area) { 
     std::vector<CuDot> dots;
     for (const auto& point : area) {
-        if (point.x < 0 || point.x >= map.size() || point.y < 0 || point.y >= map[0].size()) {
+        if (point.x < 0 || point.x >= map.rows() || point.y < 0 || point.y >= map.cols()) {
             return CuPlain(); // 点超出地图范围
         }
         dots.emplace_back(CuDot{static_cast<double>(point.x), static_cast<double>(point.y), map[point.x][point.y]});
@@ -216,4 +233,8 @@ CuDot Ground::normal(std::vector<SqDot>& area) {
 CuPlain Ground::convex_trip(std::vector<SqDot>& area) { 
     // TODO: 实现convex_trip函数
     return CuPlain();
+}
+
+bool Ground::empty() const { 
+    return map.empty(); 
 }

@@ -1,12 +1,13 @@
 #include "robot/robot.hpp"
-#include "utils/geometry.hpp"
 
-Robot::Robot(double max_stride, double max_turn, double max_foot_separation, double min_foot_separation):
+Robot::Robot(double max_stride, double max_turn, double max_foot_separation, double min_foot_separation,
+    double foot_length, double foot_width) : 
 max_stride(max_stride),
 max_turn(max_turn),
 max_foot_separation(max_foot_separation),
 min_foot_separation(min_foot_separation), 
-now_which_foot_to_move(WhichFoot::Left) {}
+now_which_foot_to_move(WhichFoot::Left),
+foot_shape(foot_length, foot_width) {}
 
 void Robot::walk_update() {
     if (now_which_foot_to_move == WhichFoot::Left) {
@@ -16,6 +17,31 @@ void Robot::walk_update() {
     }
 }
 
+/**
+ * @brief 生成理想行走路径
+ * @param ground 地面对象
+ * @return 包含路径点的向量
+ * 
+ * @details 该方法生成从机器人当前位置到目标位置的理想行走路径，
+ *          路径点表示足部的理想落足位置。
+ *          
+ *          算法流程：
+ *          1. 获取当前摆动足和支撑足
+ *          2. 基于无旋转约束确定初步移动范围
+ *          3. 在支撑足朝向方向上，考虑最大步长和双足间距约束
+ *          4. 遍历所有满足约束的候选位置点
+ *          5. 对每个候选点检查是否满足足部限制条件
+ *          6. 将满足条件的点添加到结果集合中
+ *          7. 返回最终的候选位置点集合
+ *          
+ *          约束条件：
+ *          - 最大步长约束：步长不能超过max_stride
+ *          - 双足间距约束：双足间距必须在[min_foot_separation, max_foot_separation]范围内
+ *          - 转向角约束：转向角度不能超过max_turn
+ *          
+ * @note 该方法仅生成候选位置点，不考虑路径规划和避障
+ * @note 结果点是相对于摆动足当前位置的偏移量
+ */
 std::vector<SqDot> Robot::ideal_walk(const Ground& ground) {
     std::unordered_set<SqDot, SqDotHash> area_set{};
     // 获取摆动足和支撑足
@@ -147,4 +173,53 @@ bool Robot::satisfy_foot_limits(const SqDot& new_pos) {
     }
     
     return true;
+}
+
+SlideResult Robot::slide(std::vector<SqDot>& area, Ground& ground) { 
+    return foot_shape.slide(area, ground);
+}
+
+SqDot Robot::walk_with_guide(const Ground& ground, const SqDot& goal) { 
+    
+}
+
+SqDot Robot::fit_target(const Ground& ground, const SqDot& goal) { 
+
+}
+
+SqDot Robot::direct_target(const Ground& ground, const SqDot& goal) { 
+    // 获取支撑足（当前支撑身体的脚）
+    auto& support_foot = getSupportFoot();
+    
+    // 计算从支撑足到目标点的距离
+    double dx = goal.x - support_foot.x;
+    double dy = goal.y - support_foot.y;
+    double distance = sqrt(dx * dx + dy * dy);
+    
+    SqDot target_point;
+    
+    // 如果目标点在最大步长范围内，直接返回目标点
+    if (distance <= max_stride) {
+        target_point = goal;
+    } else {
+        // 目标点在可移动距离之外，需要选择连线上的最近点
+        // 计算方向向量并归一化
+        double dir_x = dx / distance;
+        double dir_y = dy / distance;
+        
+        // 在支撑足朝向和到目标点方向之间找到一个平衡点
+        // 将目标点设置在最大步长距离上
+        double target_x = support_foot.x + max_stride * dir_x;
+        double target_y = support_foot.y + max_stride * dir_y;
+        
+        // 返回计算得到的目标点
+        target_point = SqDot(static_cast<int>(round(target_x)), static_cast<int>(round(target_y)));
+    }
+    
+    // 使用fit_target方法修正落足点
+    return fit_target(ground, target_point);
+}
+
+std::vector<SqDot> Robot::find_path(const Ground& ground, const SqDot& goal) {
+
 }

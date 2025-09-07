@@ -1,5 +1,16 @@
 # 脚本系统说明
 
+## 目录
+
+- [概述](#概述)
+- [脚本目录结构](#脚本目录结构)
+- [脚本详细说明](#脚本详细说明)
+- [不同类型脚本的特点和优势](#不同类型脚本的特点和优势)
+- [脚本开发规范](#脚本开发规范)
+- [跨平台兼容性](#跨平台兼容性)
+- [最佳实践](#最佳实践)
+- [常见问题](#常见问题)
+
 ## 概述
 
 本项目包含多个脚本，用于自动化数据生成、格式转换、构建、测试和部署等任务。脚本分为Python脚本和平台特定脚本（如PowerShell、Batch），以提供跨平台支持和良好的用户体验。
@@ -125,9 +136,9 @@ python scripts/transor/jpg2csv.py
 python scripts/run_tests.py
 ```
 
-## 脚本详细说明
+### 5. Windows平台测试脚本
 
-### run_tests.bat
+#### run_tests.bat
 
 位置：[scripts/platform/windows/run_tests.bat](../scripts/platform/windows/run_tests.bat)
 
@@ -212,7 +223,7 @@ scripts\platform\windows\run_tests.bat
 
 所有脚本都应正确处理中文字符编码：
 
-1. Python脚本中设置编码：
+#### 1. Python脚本中设置编码
 
 ```python
 import sys
@@ -220,7 +231,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 ```
 
-2. 批处理脚本中设置编码：
+#### 2. 批处理脚本中设置编码
 
 ```batch
 chcp 65001
