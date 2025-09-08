@@ -1,298 +1,231 @@
 #include "aStar/aStar.hpp"
-#include "utils/geometry.hpp"
-#include "utils/fast_flatness.hpp"
 
 /**
- * @brief 计算两点间的曼哈顿距离（L1距离）
+ * @brief 使用A*算法在二维地图上搜索从起点到终点的最短路径
  * 
- * 曼哈顿距离是两点在南北方向和东西方向上的距离之和
- * 公式: |x1-x2| + |y1-y2|
+ * 该函数实现了经典的A*搜索算法，使用欧几里得距离作为启发式函数，
+ * 曼哈顿距离和地形代价组合作为实际代价函数
  * 
- * @param a 点A坐标
- * @param b 点B坐标
- * @return 曼哈顿距离值
- */
-double manhattan_distance(SqDot a, SqDot b) {
-    return std::abs(a.x - b.x) + std::abs(a.y - b.y);
-}
-
-/**
- * @brief 计算两点间的欧几里得距离（L2距离）
- * 
- * 欧几里得距离是两点之间的直线距离
- * 公式: √[(x1-x2)² + (y1-y2)²]
- * 
- * @param a 点A坐标
- * @param b 点B坐标
- * @return 欧几里得距离值
- */
-double euclidean_distance(SqDot a, SqDot b) {
-    return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
-}
-
-/**
- * @brief A*寻路算法实现
- * 
- * A*算法是一种启发式搜索算法，结合了Dijkstra算法的准确性和贪心最佳优先搜索的效率。
- * 它使用函数f(n) = g(n) + h(n)来评估节点：
- * - g(n): 从起点到节点n的实际代价
- * - h(n): 从节点n到终点的启发式估计代价
- * 
- * @param graph 地图图结构，包含障碍物信息和节点连接关系
- * @param start 起始点坐标
- * @param goal  目标点坐标
- * @return 包含路径点坐标的vector<SqDot>
- *         如果未找到路径，则返回空vector
- * 
- * @details 该实现使用以下策略：
- *          1. 使用优先队列存储待访问的节点，按f(n)值排序
- *          2. 使用哈希表记录已访问的节点和到达该节点的最小代价
- *          3. 使用哈希表记录路径信息，用于重构最终路径
- *          4. 使用欧几里得距离作为启发式函数h(n)
- *          
- *          算法流程：
- *          1. 初始化起点，计算其f_score并加入开放列表
- *          2. 当开放列表不为空时，取出f_score最小的节点
- *          3. 如果当前节点是目标节点，则重构路径并返回
- *          4. 遍历当前节点的所有邻居节点
- *          5. 对每个邻居节点计算 tentative_g_score
- *          6. 如果通过当前节点到达邻居节点的路径更优，则更新邻居节点信息
- *          7. 将未访问的邻居节点加入开放列表
- *          8. 将当前节点标记为已访问
- *          9. 重复步骤2-8直到找到目标或开放列表为空
- *          
- * @note 该实现使用欧几里得距离作为启发式函数，适用于无约束移动的网格地图。
- * @note 算法复杂度取决于地图大小和障碍物分布，最坏情况下为O(|E|log|V|)。
+ * @param graph 二维地图对象，包含地形信息
+ * @param start 起点坐标
+ * @param goal 终点坐标
+ * @return 从起点到终点的路径点序列
  */
 std::vector<SqDot> a_star_search(SqPlain& graph, SqDot start, SqDot goal) {
-    // 自定义比较函数，用于优先队列排序
-    // 按照f_score排序（小顶堆），f_score相同时按点坐标排序
-    auto cmp = [](const std::pair<double, SqDot>& a, const std::pair<double, SqDot>& b) {
-        if (a.first != b.first) {
-            return a.first > b.first;  // f_score较小的优先
-        }
-        // f_score相同时，按坐标排序确保一致性
-        if (a.second.x != b.second.x) {
-            return a.second.x > b.second.x;
-        }
-        return a.second.y > b.second.y;
+    using que_unit = std::pair<double, SqDot>;
+    auto cmp = [](const que_unit& a, const que_unit& b) {
+        return a.first > b.first;
     };
-    
-    // 优先队列，用于存储待访问的节点，按照f_score排序（小顶堆）
-    std::priority_queue<std::pair<double, SqDot>, 
-                        std::vector<std::pair<double, SqDot>>, 
-                        decltype(cmp)> open_set(cmp);
-    
-    // 存储每个节点的g_score（从起点到当前节点的实际代价）
-    std::unordered_map<SqDot, double, SqDotHash> g_score;
-    
-    // 存储每个节点的f_score（g_score + h_score，即预估总代价）
-    std::unordered_map<SqDot, double, SqDotHash> f_score;
-    
-    // 存储每个节点的前驱节点，用于路径重建
-    std::unordered_map<SqDot, SqDot, SqDotHash> came_from;
-    
-    // 记录已经访问过的节点
-    std::unordered_set<SqDot, SqDotHash> closed_set;
-    
-    // 初始化起点
-    g_score[start] = 0;
-    f_score[start] = euclidean_distance(start, goal);
-    open_set.push({f_score[start], start});
-    
-    // 主循环
-    while (!open_set.empty()) {
-        // 取出f_score最小的节点
-        SqDot current = open_set.top().second;
-        open_set.pop();
-        
-        // 如果到达终点，重建路径并返回
-        if (current == goal) {
-            std::vector<SqDot> path;
-            SqDot node = current;
-            while (came_from.find(node) != came_from.end()) {
-                path.push_back(node);
-                node = came_from[node];
-            }
-            path.push_back(start);
-            std::reverse(path.begin(), path.end());
-            return path;
-        }
-        
-        // 将当前节点加入已访问集合
-        closed_set.insert(current);
-        
-        // 遍历当前节点的所有邻居
-        for (int i = 0; i < 4; i++) {
-            SqDot neighbor = graph.get_neighbour(current, i);
-            
-            // 检查邻居是否可通行
-            if (!graph.edge_allowed(neighbor)) {
-                continue;
-            }
-            
-            // 如果邻居已经访问过，跳过
-            if (closed_set.find(neighbor) != closed_set.end()) {
-                continue;
-            }
-            
-            // 计算从起点到邻居的代价
-            double tentative_g_score = g_score[current] + graph.map[neighbor.x][neighbor.y];
-            
-            // 如果找到了更优的路径，或者首次访问该邻居
-            if (g_score.find(neighbor) == g_score.end() || tentative_g_score < g_score[neighbor]) {
-                came_from[neighbor] = current;
-                g_score[neighbor] = tentative_g_score;
-                f_score[neighbor] = g_score[neighbor] + euclidean_distance(neighbor, goal);
-                
-                // 将邻居加入待访问队列
-                open_set.push({f_score[neighbor], neighbor});
+    std::priority_queue<que_unit, std::vector<que_unit>, decltype(cmp)> frontier(cmp);
+    frontier.push({0.0, start});
+    std::vector<SqDot> came_from = std::vector<SqDot>(graph.rows() * graph.cols(), SqDot(-1, -1));
+    std::unordered_map<SqDot, double, SqDotHash> cost_so_far{{start, 0.0}};
+    while (!frontier.empty()) {
+        SqDot current = frontier.top().second;
+        frontier.pop();
+        if (current == goal) break;
+
+        for (auto& next: graph.get_valid_neighbours(current)) {
+            auto new_cost = cost_so_far[current] + graph.cost(current, next);
+            if (cost_so_far.find(next) == cost_so_far.end() || new_cost < cost_so_far[next]) {
+                cost_so_far[next] = new_cost;
+                double priority = new_cost + euclidean_distance(next, goal);
+                frontier.push({priority, next});
+                came_from[next.x * graph.cols() + next.y] = current;
             }
         }
     }
+
+    std::vector<SqDot> path;
+    SqDot current = goal;
+    int max_steps = graph.rows() * graph.cols();
+    int steps = 0;
     
-    // 未找到路径，返回空vector
-    return std::vector<SqDot>();
+    while (current != SqDot(-1, -1) && current != start && steps < max_steps) {
+        path.push_back(current);
+
+        if (current.x < 0 || current.x >= graph.rows() || current.y < 0 || current.y >= graph.cols()) {
+            path.clear();
+            break;
+        }
+        current = came_from[current.x * graph.cols() + current.y];
+        steps++;
+    }
+    
+    if (steps >= max_steps) {
+        path.clear();
+    } else if (!path.empty() || current == start) {
+        path.push_back(start);
+    }
+    
+    std::reverse(path.begin(), path.end());
+    return std::move(path);
 }
 
 /**
- * @brief 改进版A*寻路算法实现
+ * @brief 使用缩放地图的A*算法进行路径规划
  * 
- * 改进版A*算法在传统A*算法基础上增加了对区域平整度的实时评估，
- * 可以在路径规划过程中更准确地评估每个节点的实际通行代价。
+ * 该函数通过缩放地图来降低搜索空间复杂度，然后在缩放后的地图上进行A*搜索，
+ * 最后将路径映射回原始地图坐标系
  * 
- * @param graph 地图图结构，包含障碍物信息和节点连接关系
- * @param start 起始点坐标
- * @param goal  目标点坐标
- * @param foot_size 足部尺寸，用于计算区域平整度评估的范围
- * @return 包含路径点坐标的vector<SqDot>
- *         如果未找到路径，则返回空vector
- * 
- * @details 该实现使用以下策略：
- *          1. 使用优先队列存储待访问的节点，按f(n)值排序
- *          2. 使用哈希表记录已访问的节点和到达该节点的最小代价
- *          3. 使用哈希表记录路径信息，用于重构最终路径
- *          4. 使用欧几里得距离作为启发式函数h(n)
- *          5. 在计算节点代价时，结合区域平整度评估进行动态调整
- *          
- *          算法流程：
- *          1. 初始化起点，计算其f_score并加入开放列表
- *          2. 当开放列表不为空时，取出f_score最小的节点
- *          3. 如果当前节点是目标节点，则重构路径并返回
- *          4. 遍历当前节点的所有邻居节点
- *          5. 对每个邻居节点计算 tentative_g_score，包含平整度评估
- *          6. 如果通过当前节点到达邻居节点的路径更优，则更新邻居节点信息
- *          7. 将未访问的邻居节点加入开放列表
- *          8. 将当前节点标记为已访问
- *          9. 重复步骤2-8直到找到目标或开放列表为空
+ * @param graph 原始二维地图对象
+ * @param start 起点坐标
+ * @param goal 终点坐标
+ * @param stride 步长参数，用于计算缩放比例
+ * @return 在原始地图上的引导点序列
  */
-std::vector<SqDot> a_star_search_improved(SqPlain& graph, SqDot start, SqDot goal, double foot_size) {
-    // 自定义比较函数，用于优先队列排序
-    // 按照f_score排序（小顶堆），f_score相同时按点坐标排序
-    auto cmp = [](const std::pair<double, SqDot>& a, const std::pair<double, SqDot>& b) {
-        if (a.first != b.first) {
-            return a.first > b.first;  // f_score较小的优先
-        }
-        // f_score相同时，按坐标排序确保一致性
-        if (a.second.x != b.second.x) {
-            return a.second.x > b.second.x;
-        }
-        return a.second.y > b.second.y;
+std::vector<SqDot> scale_star(SqPlain& graph, SqDot start, SqDot goal, double stride) {
+    auto scale = 1.0/stride;
+
+    auto ss = start.scale(scale);
+    auto sg = goal.scale(scale);
+    auto sr = graph.row_scale(scale);
+    auto sc = graph.col_scale(scale);
+
+    using que_unit = std::pair<double, SqDot>;
+    auto cmp = [](const que_unit& a, const que_unit& b) {
+        return a.first > b.first;
     };
-    
-    // 优先队列，用于存储待访问的节点，按照f_score排序（小顶堆）
-    std::priority_queue<std::pair<double, SqDot>, 
-                        std::vector<std::pair<double, SqDot>>, 
-                        decltype(cmp)> open_set(cmp);
-    
-    // 存储每个节点的g_score（从起点到当前节点的实际代价）
-    std::unordered_map<SqDot, double, SqDotHash> g_score;
-    
-    // 存储每个节点的f_score（g_score + h_score，即预估总代价）
-    std::unordered_map<SqDot, double, SqDotHash> f_score;
-    
-    // 存储每个节点的前驱节点，用于路径重建
-    std::unordered_map<SqDot, SqDot, SqDotHash> came_from;
-    
-    // 记录已经访问过的节点
-    std::unordered_set<SqDot, SqDotHash> closed_set;
-    
-    // 初始化起点
-    g_score[start] = 0;
-    f_score[start] = euclidean_distance(start, goal);
-    open_set.push({f_score[start], start});
-    
-    // 计算用于平整度评估的区域边长（基于足部尺寸）
-    int area_side_length = static_cast<int>(std::ceil(foot_size));
-    
-    // 主循环
-    while (!open_set.empty()) {
-        // 取出f_score最小的节点
-        SqDot current = open_set.top().second;
-        open_set.pop();
-        
-        // 如果到达终点，重建路径并返回
-        if (current == goal) {
-            std::vector<SqDot> path;
-            SqDot node = current;
-            while (came_from.find(node) != came_from.end()) {
-                path.push_back(node);
-                node = came_from[node];
-            }
-            path.push_back(start);
-            std::reverse(path.begin(), path.end());
-            return path;
-        }
-        
-        // 将当前节点加入已访问集合
-        closed_set.insert(current);
-        
-        // 遍历当前节点的所有邻居
-        for (int i = 0; i < 4; i++) {
-            SqDot neighbor = graph.get_neighbour(current, i);
+
+    std::priority_queue<que_unit, std::vector<que_unit>, decltype(cmp)> frontier(cmp);
+    frontier.push({0.0, ss});
+
+    std::vector<SqDot> came_from = std::vector<SqDot>(sr * sc, SqDot(-1, -1));
+
+    std::unordered_map<SqDot, double, SqDotHash> cost_so_far{{ss, 0.0}};
+    while (!frontier.empty()) {
+        SqDot current = frontier.top().second;
+        frontier.pop();
+        if (current == sg) break;
+        for (auto& next: current.get_neighbour(sr, sc)) {            
+
+            auto block_pair = graph.restore(next, scale);
+            auto steep = steep_extend(graph, block_pair.first, block_pair.second);
             
-            // 检查邻居是否可通行
-            if (!graph.edge_allowed(neighbor)) {
+
+            if (steep < 0) {
                 continue;
             }
             
-            // 如果邻居已经访问过，跳过
-            if (closed_set.find(neighbor) != closed_set.end()) {
-                continue;
-            }
-            
-            // 使用快速平整度评估算法计算当前邻居节点区域的平整度
-            double flatness_cost = FastFlatnessEvaluator::evaluate(graph, neighbor, area_side_length);
-            
-            // 计算从起点到邻居的代价（包含平整度评估）
-            double tentative_g_score = g_score[current] + graph.map[neighbor.x][neighbor.y] + flatness_cost;
-            
-            // 如果找到了更优的路径，或者首次访问该邻居
-            if (g_score.find(neighbor) == g_score.end() || tentative_g_score < g_score[neighbor]) {
-                came_from[neighbor] = current;
-                g_score[neighbor] = tentative_g_score;
-                f_score[neighbor] = g_score[neighbor] + euclidean_distance(neighbor, goal);
-                
-                // 将邻居加入待访问队列
-                open_set.push({f_score[neighbor], neighbor});
+            auto new_cost = cost_so_far[current] + graph.cost(current, next) + steep;
+            if (cost_so_far.find(next) == cost_so_far.end() || new_cost < cost_so_far[next]) {
+                cost_so_far[next] = new_cost;
+                double priority = new_cost + euclidean_distance(next, sg);
+                frontier.push({priority, next});
+                came_from[next.x * sc + next.y] = current;
             }
         }
     }
     
-    // 未找到路径，返回空vector
-    return std::vector<SqDot>();
+
+    std::vector<SqDot> guides{goal};
+    SqDot current = came_from[sg.x * sc + sg.y];
+    while (current != SqDot(-1, -1) && current != ss) {
+        guides.emplace_back(graph.restore_dot(current, scale));
+        current = came_from[current.x * sc + current.y];
+    }
+    guides.emplace_back(start);
+    std::reverse(guides.begin(), guides.end());
+    return guides;
 }
 
+/**
+ * @brief 在缩放地图上执行A*搜索并返回缩放地图上的路径
+ * 
+ * 与scale_star不同，该函数直接返回在缩放地图上的路径点，而不是映射回原始地图
+ * 
+ * @param graph 原始二维地图对象
+ * @param start 起点坐标
+ * @param goal 终点坐标
+ * @param stride 步长参数，用于计算缩放比例
+ * @return 在缩放地图上的路径点序列
+ */
+std::vector<SqDot> scale_star_on_scaled_map(SqPlain& graph, SqDot start, SqDot goal, double stride) {
+    auto scale = 1.0/stride;
+
+    auto ss = start.scale(scale);
+    auto sg = goal.scale(scale);
+    auto sr = graph.row_scale(scale);
+    auto sc = graph.col_scale(scale);
+
+    using que_unit = std::pair<double, SqDot>;
+    auto cmp = [](const que_unit& a, const que_unit& b) {
+        return a.first > b.first;
+    };
+
+    std::priority_queue<que_unit, std::vector<que_unit>, decltype(cmp)> frontier(cmp);
+    frontier.push({0.0, ss});
+
+    std::vector<SqDot> came_from = std::vector<SqDot>(sr * sc, SqDot(-1, -1));
+
+    std::unordered_map<SqDot, double, SqDotHash> cost_so_far{{ss, 0.0}};
+    while (!frontier.empty()) {
+        SqDot current = frontier.top().second;
+        frontier.pop();
+        if (current == sg) break;
+        for (auto& next: current.get_neighbour()) {            
+
+            auto block_pair = graph.restore(next, scale);
+            auto steep = steep_extend(graph, block_pair.first, block_pair.second);
+            
+
+            if (steep < 0) {
+                continue;
+            }
+            
+            auto new_cost = cost_so_far[current] + graph.cost(current, next) + steep;
+            if (cost_so_far.find(next) == cost_so_far.end() || new_cost < cost_so_far[next]) {
+                cost_so_far[next] = new_cost;
+                double priority = new_cost + euclidean_distance(next, sg);
+                frontier.push({priority, next});
+                came_from[next.x * sc + next.y] = current;
+            }
+        }
+    }
+    
+
+    std::vector<SqDot> path;
+    SqDot current = sg;
+    while (current != SqDot(-1, -1) && current != ss) {
+        path.emplace_back(current);
+        current = came_from[current.x * sc + current.y];
+    }
+    path.push_back(ss);
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+/**
+ * @brief 将引导点序列转换为中心恢复点序列
+ * 
+ * 该函数将缩放地图上的引导点映射回原始地图的中心点
+ * 
+ * @param guides 缩放地图上的引导点序列
+ * @param scale 缩放比例
+ * @param unit_size 单元格大小
+ * @return 原始地图上的中心点序列
+ */
 std::vector<SqDot> central_restore_guide(std::vector<SqDot>& guides, double scale, double unit_size) {
     std::vector<SqDot> path;
     for (const auto& point : guides) {
-        path.emplace_back(point.central_restore(scale, unit_size));
+        path.emplace_back(point.central_restore(scale));
     }
     return path;
 }
 
+/**
+ * @brief 离散引导点生成函数
+ * 
+ * 通过缩放地图进行路径规划，然后将结果映射回原始地图
+ * 
+ * @param graph 原始地图
+ * @param stride 步长
+ * @param start 起点
+ * @param goal 终点
+ * @return 原始地图上的引导点序列
+ */
 std::vector<SqDot> discrete_guide(SqPlain& graph, double stride, SqDot start, SqDot goal) {
-    auto scale = 1.0 / stride;
+    auto scale = 1.0/stride;
     auto scale_graph = graph.scale_graph(scale);
     auto scale_start = start.scale(scale);
     auto scale_goal = goal.scale(scale);
@@ -301,12 +234,106 @@ std::vector<SqDot> discrete_guide(SqPlain& graph, double stride, SqDot start, Sq
     return central_restore_guide(guides, scale, graph.map.size());
 }
 
+/**
+ * @brief 改进的离散引导点生成函数
+ * 
+ * 使用scale_star算法生成引导点序列
+ * 
+ * @param graph 原始地图
+ * @param stride 步长
+ * @param start 起点
+ * @param goal 终点
+ * @param foot_size 足部尺寸
+ * @return 原始地图上的引导点序列
+ */
 std::vector<SqDot> discrete_guide_improved(SqPlain& graph, double stride, SqDot start, SqDot goal, double foot_size) {
-    auto scale = 1.0 / stride;
-    auto scale_graph = graph.scale_graph(scale);
-    auto scale_start = start.scale(scale);
-    auto scale_goal = goal.scale(scale);
 
-    auto guides = a_star_search_improved(scale_graph, scale_start, scale_goal, foot_size);
-    return central_restore_guide(guides, scale, graph.map.size());
+    return scale_star(graph, start, goal, stride);
+}
+
+/**
+ * @brief 计算两点间区域的陡峭程度
+ * 
+ * 该函数评估两点定义的区域的地形陡峭程度，用于路径规划中的代价计算
+ * 
+ * @param graph 地图对象
+ * @param fi 第一个点
+ * @param se 第二个点
+ * @return 区域的陡峭程度评分，负值表示不可行区域
+ */
+double steep_extend(SqPlain& graph, SqDot& fi, SqDot& se) {
+
+    SqDot bounded_first = graph.orth_near(fi);
+    SqDot bounded_second = graph.orth_near(se);
+    
+
+    int min_x = std::min(bounded_first.x, bounded_second.x);
+    int max_x = std::max(bounded_first.x, bounded_second.x);
+    int min_y = std::min(bounded_first.y, bounded_second.y);
+    int max_y = std::max(bounded_first.y, bounded_second.y);
+    
+
+    if (min_x >= max_x || min_y >= max_y) {
+        return -1.0;
+    }
+    
+
+    int obstacle_count = 0;
+    int total_count = 0;
+    std::vector<double> heights;
+    
+    for (int x = min_x; x <= max_x; x++) {
+        for (int y = min_y; y <= max_y; y++) {
+
+            if (x < 0 || x >= graph.rows() || y < 0 || y >= graph.cols()) {
+                continue;
+            }
+
+            total_count++;
+            double height = graph[x][y];
+
+            if (height == std::numeric_limits<double>::infinity()) {
+                obstacle_count++;
+            }
+
+            else if (height >= 0) {
+                heights.emplace_back(height);
+            }
+        }
+    }
+    
+
+    if (total_count > 0 && (static_cast<double>(obstacle_count) / total_count) >= 0.5) {
+        return -1.0;
+    }
+    
+
+    if (heights.empty()) {
+        return -1.0;
+    }
+    
+
+    if (heights.size() == 1) {
+        return 0.0;
+    }
+    
+
+    double sum = std::accumulate(heights.begin(), heights.end(), 0.0);
+    double mean = sum / heights.size();
+    
+
+    double variance = 0.0;
+    for (const auto& height : heights) {
+        double diff = height - mean;
+        variance += diff * diff;
+    }
+    variance /= heights.size();
+    double stddev = std::sqrt(variance);
+    
+
+    auto minmax = std::minmax_element(heights.begin(), heights.end());
+    double height_diff = *minmax.second - *minmax.first;
+    
+
+    return 0.7 * stddev + 0.3 * height_diff;
 }

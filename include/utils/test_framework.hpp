@@ -5,49 +5,78 @@
 #include <vector>
 #include <functional>
 #include <string>
+#include <fstream>
+#include <memory>
+#include "utils/io.hpp"
 
 class TestFramework {
 public:
     using TestFunction = std::function<void()>;
+    
     
     static TestFramework& getInstance() {
         static TestFramework instance;
         return instance;
     }
     
+    
+    void setWorkingDirectory(const std::string& workingDir) {
+        IOManager::getInstance().setWorkingDirectory(workingDir);
+    }
+    
+    
+    void setLogFile(const std::string& filename) {
+        std::string logPath = IOManager::getInstance().buildPath(filename);
+        IOManager::getInstance().createDirectories(logPath);
+        logFile = std::make_unique<std::ofstream>(logPath);
+    }
+    
+    
     void addTest(const std::string& name, TestFunction test) {
         tests.push_back({name, test});
     }
     
+    
+    void log(const std::string& message) {
+        std::cout << message << std::endl;
+        if (logFile && *logFile) {
+            *logFile << message << std::endl;
+            logFile->flush();
+        }
+    }
+    
+    
     bool runTests() {
-        std::cout << "正在运行 " << tests.size() << " 个测试...\n" << std::endl;
+        log("正在运行 " + std::to_string(tests.size()) + " 个测试...");
         bool allPassed = true;
         
         for (const auto& test : tests) {
-            std::cout << "正在运行测试: " << test.name << std::endl;
+            log("正在运行测试: " + test.name);
             try {
                 test.func();
-                std::cout << "  结果: 通过\n" << std::endl;
+                log("  结果: 通过");
             } catch (const std::exception& e) {
-                std::cout << "  结果: 失败 - " << e.what() << "\n" << std::endl;
+                log("  结果: 失败 - " + std::string(e.what()));
                 allPassed = false;
             } catch (...) {
-                std::cout << "  结果: 失败 - 未知错误\n" << std::endl;
+                log("  结果: 失败 - 未知错误");
                 allPassed = false;
             }
         }
         
-        std::cout << "测试套件执行完成。" << (allPassed ? "所有测试通过。" : "部分测试失败。") << std::endl;
+        log("测试套件执行完成。" + std::string(allPassed ? "所有测试通过。" : "部分测试失败。"));
         return allPassed;
     }
 
 private:
+    
     struct Test {
         std::string name;
         TestFunction func;
     };
     
     std::vector<Test> tests;
+    std::unique_ptr<std::ofstream> logFile;
     
     TestFramework() = default;
 };
@@ -60,4 +89,4 @@ private:
     }(); \
     static void test_##name()
 
-#endif // TEST_FRAMEWORK_HPP
+#endif

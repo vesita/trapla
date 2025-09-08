@@ -2,32 +2,35 @@ cmake_minimum_required(VERSION 3.10)
 project(trapla)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 查找所有源文件
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*/*.cpp")
-file(GLOB_RECURSE HEADERS "include/*.hpp")
+# 添加头文件目录
+include_directories(include)
 
-# 创建可执行文件
-add_executable(trapla ${SOURCES} ${HEADERS})
+# 添加源文件（排除main.cpp）
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+list(FILTER SOURCES EXCLUDE REGEX "main.cpp")
 
-# 指定包含目录
-target_include_directories(trapla PRIVATE include)
+# 创建主可执行文件
+add_executable(trapla src/main.cpp ${SOURCES})
 
-# 创建测试可执行文件，排除main.cpp
-file(GLOB_RECURSE TEST_SOURCES "src/*.cpp" "src/*/*.cpp")
-list(FILTER TEST_SOURCES EXCLUDE REGEX "main.cpp")
+# 添加测试可执行文件
+add_executable(aStar_test tests/aStar_test.cpp ${SOURCES})
+add_executable(ground_test tests/ground_test.cpp ${SOURCES})
+add_executable(utils_test tests/utils_test.cpp ${SOURCES})
+add_executable(comparison_test tests/comparison_test.cpp ${SOURCES})
 
-# foot测试
-add_executable(foot_test tests/foot_test.cpp ${TEST_SOURCES})
-target_include_directories(foot_test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# A*算法测试
-add_executable(aStar_test tests/aStar_test.cpp ${TEST_SOURCES})
-target_include_directories(aStar_test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# 地面和平面接触测试
-add_executable(ground_test tests/ground_test.cpp ${TEST_SOURCES})
-target_include_directories(ground_test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# 创建目录结构以匹配测试中使用的相对路径
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+# 链接数学库和文件系统库（如果需要）
+if(UNIX)
+    target_link_libraries(trapla m)
+    target_link_libraries(aStar_test m stdc++fs)
+    target_link_libraries(ground_test m stdc++fs)
+    target_link_libraries(utils_test m stdc++fs)
+    target_link_libraries(comparison_test m stdc++fs)
+else()
+    # Windows下链接文件系统库
+    target_link_libraries(aStar_test stdc++fs)
+    target_link_libraries(ground_test stdc++fs)
+    target_link_libraries(utils_test stdc++fs)
+    target_link_libraries(comparison_test stdc++fs)
+endif()

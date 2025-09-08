@@ -7,6 +7,9 @@ template<typename T> class Mat;
 #include <vector>
 #include <stdexcept>
 #include <iostream>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 template<typename T>
 class Mat {
@@ -60,7 +63,6 @@ public:
     const T& operator()(int row, int col) const;
 };
 
-// 矩阵旋转函数声明
 MatUnit<double> rot_x(double angle);
 MatUnit<double> rot_y(double angle);
 MatUnit<double> rot_z(double angle);

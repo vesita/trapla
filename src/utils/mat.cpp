@@ -1,9 +1,4 @@
 #include "utils/mat.hpp"
-#include <algorithm>
-#include <cmath>
-#include <limits>
-
-// MatUnit 实现
 
 template<typename T>
 MatUnit<T>::MatUnit(int rows, int cols) : rows(rows), cols(cols) {
@@ -86,8 +81,6 @@ const T& MatUnit<T>::operator()(int row, int col) const {
     return data[row][col];
 }
 
-// Mat 实现
-
 template<typename T>
 Mat<T>::Mat() : size(0) {}
 
@@ -150,11 +143,11 @@ Mat<T> Mat<T>::result() const {
         return Mat<T>::desig(result_mats);
     }
     
-    // 动态规划计算最优矩阵链乘法
+
     std::vector<std::vector<T>> mem(size, std::vector<T>(size, T(0)));
     std::vector<std::vector<int>> split(size, std::vector<int>(size, 0));
     
-    // chain表示当前考虑的矩阵链长度，从2开始
+
     for (int chain = 2; chain <= size; chain++) {
         for (int row = 0; row < size - chain + 1; row++) {
             int col = row + chain - 1;
@@ -162,7 +155,7 @@ Mat<T> Mat<T>::result() const {
             mem[row][col] = std::numeric_limits<T>::max();
             split[row][col] = row;
             
-            // 尝试所有可能的分割点
+
             for (int next = row; next < col; next++) {
                 T cost = mem[row][next] + mem[next + 1][col];
                 T product = T(edges[row] * edges[next + 1] * edges[col + 1]);
@@ -176,7 +169,7 @@ Mat<T> Mat<T>::result() const {
         }
     }
     
-    // 根据分割点构造最终结果
+
     MatUnit<T> result_matrix = construct_result(split, 0, size - 1);
     std::vector<MatUnit<T>> result_mats = {result_matrix};
     return Mat<T>::desig(result_mats);
@@ -196,8 +189,6 @@ Mat<T> Mat<T>::derect() const {
     std::vector<MatUnit<T>> result_mats = {result};
     return Mat<T>::desig(result_mats);
 }
-
-// 旋转矩阵函数实现
 
 MatUnit<double> rot_x(double angle) {
     MatUnit<double> result(4, 4);
@@ -238,7 +229,6 @@ MatUnit<double> rot_z(double angle) {
     return result;
 }
 
-// 显式模板实例化
 template class MatUnit<int>;
 template class MatUnit<double>;
 template class MatUnit<float>;

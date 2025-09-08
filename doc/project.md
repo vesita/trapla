@@ -135,3 +135,115 @@
 - **单元测试**：针对各个模块进行独立测试
 - **集成测试**：测试模块间的协同工作
 - **性能测试**：评估算法性能和效率
+
+## 5. 代码结构说明
+
+### 5.1 源代码目录结构
+
+```index
+src/
+├── aStar/              # A*算法实现
+│   └── aStar.cpp       # A*算法核心实现
+├── csvReader/          # CSV文件读取器
+│   └── reader.cpp      # CSV数据读取实现
+├── ground/             # 地面处理模块
+│   └── ground.cpp      # 地面数据处理实现
+├── robot/              # 机器人相关模块
+│   ├── foot.cpp        # 足部相关实现
+│   └── robot.cpp       # 机器人行为实现
+├── utils/              # 工具模块
+│   ├── geometry.cpp    # 几何计算实现
+│   ├── fast_flatness.cpp # 快速平整度评估实现
+│   └── scale.cpp       # 缩放功能实现
+└── main.cpp            # 主程序入口
+```
+
+### 5.2 头文件目录结构
+
+```index
+include/
+├── aStar/
+│   └── aStar.hpp       # A*算法头文件
+├── csvReader/
+│   └── reader.hpp      # CSV读取器头文件
+├── ground/
+│   └── ground.hpp      # 地面处理头文件
+├── robot/
+│   ├── foot.hpp        # 足部相关头文件
+│   └── robot.hpp       # 机器人相关头文件
+├── utils/
+│   ├── geometry.hpp    # 几何计算头文件
+│   ├── fast_flatness.hpp # 快速平整度评估头文件
+│   ├── scale.hpp       # 缩放功能头文件
+│   ├── test_framework.hpp # 测试框架头文件
+│   └── io.hpp          # IO管理头文件
+└── prepare.hpp         # 预处理头文件
+```
+
+### 5.3 测试目录结构
+
+```index
+tests/
+├── aStar_test.cpp      # A*算法测试
+├── ground_test.cpp     # 地面处理测试
+├── utils_test.cpp      # 工具模块测试
+├── comparison_test.cpp # 对比测试
+└── run_tests.py        # 测试运行脚本
+```
+
+## 6. 编译和构建
+
+项目使用CMake作为构建系统，支持跨平台构建。
+
+### 6.1 构建步骤
+
+1. 创建构建目录：
+
+   ```bash
+   mkdir build
+   cd build
+   ```
+
+2. 配置项目：
+
+   ```bash
+   cmake ..
+   ```
+
+3. 编译项目：
+
+   ```bash
+   make
+   ```
+
+### 6.2 生成的可执行文件
+
+构建完成后会生成以下可执行文件：
+
+- `trapla`：主程序
+- `aStar_test`：A*算法测试程序
+- `ground_test`：地面处理测试程序
+- `utils_test`：工具模块测试程序
+- `comparison_test`：对比测试程序
+
+## 7. 运行和测试
+
+### 7.1 运行主程序
+
+```bash
+./trapla
+```
+
+### 7.2 运行测试
+
+在项目根目录下执行：
+
+```bash
+python scripts/run_tests.py
+```
+
+或者在Windows系统上：
+
+```cmd
+scripts\platform\windows\run_tests.bat
+```
