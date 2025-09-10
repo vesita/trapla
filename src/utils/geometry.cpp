@@ -7,7 +7,7 @@
  * @param b 第二个点
  * @return 曼哈顿距离值
  */
-double manhattan_distance(SqDot a, SqDot b) {
+double manhattan_distance(const SqDot& a, const SqDot& b) {
     return std::abs(a.x - b.x) + std::abs(a.y - b.y);
 }
 
@@ -18,18 +18,85 @@ double manhattan_distance(SqDot a, SqDot b) {
  * @param b 第二个点
  * @return 欧几里得距离值
  */
-double euclidean_distance(SqDot a, SqDot b) {
+double euclidean_distance(const SqDot& a, const SqDot& b) {
     return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
 /**
- * @brief 构造函数，创建一个二维整数坐标点
+ * @brief 哈希函数，用于在哈希表中存储SqDot对象
+ * 
+ * @param p 点对象
+ * @return 哈希值
+ */
+std::size_t SqDotHash::operator()(const SqDot& p) const {
+
+    return std::hash<int>()(p.x) ^ (std::hash<int>()(p.y) << 1);
+}
+
+
+
+/**
+ * @brief 以origin为原点旋转input点
+ * 
+ * @param origin 原点
+ * @param input 输入点
+ * @param angle 旋转角度（弧度）
+ * @return 旋转后的点
+ */
+SqDot rotate_dot(const SqDot& origin, const SqDot& input, double angle) {
+    // 将input点相对于origin点进行旋转
+    SqDot relative = input - origin;
+    
+    double cos_a = cos(angle);
+    double sin_a = sin(angle);
+    
+    double new_x = relative.x * cos_a - relative.y * sin_a;
+    double new_y = relative.x * sin_a + relative.y * cos_a;
+    
+    return SqDot(new_x, new_y) + origin;
+}
+
+/**
+ * @brief 构造函数，创建一个二维坐标点
  * 
  * @param x x坐标
  * @param y y坐标
  */
-SqDot::SqDot(int x, int y): x(x), y(y) {
+SqDot::SqDot(double x, double y): x(x), y(y) {
     return;
+}
+
+/**
+ * @brief 构造函数，从整数坐标创建点
+ * 
+ * @param x x坐标
+ * @param y y坐标
+ */
+SqDot::SqDot(int x, int y): x(static_cast<double>(x)), y(static_cast<double>(y)) {
+    return;
+}
+
+void SqDot::set(double x, double y) {
+    this->x = x;
+    this->y = y;
+}
+
+/**
+ * @brief 获取x坐标的整数索引（四舍五入）
+ * 
+ * @return x坐标的整数索引
+ */
+int SqDot::x_index() const {
+    return static_cast<int>(std::round(x));
+}
+
+/**
+ * @brief 获取y坐标的整数索引（四舍五入）
+ * 
+ * @return y坐标的整数索引
+ */
+int SqDot::y_index() const {
+    return static_cast<int>(std::round(y));
 }
 
 /**
@@ -39,7 +106,31 @@ SqDot::SqDot(int x, int y): x(x), y(y) {
  * @return 缩放后的坐标点
  */
 SqDot SqDot::scale(double scale) const {
-    return SqDot(static_cast<int>(std::round(x * scale)), static_cast<int>(std::round(y * scale)));
+    return SqDot(x * scale, y * scale);
+}
+
+SqDot SqDot::up_rotate(const double& angle) const { 
+    double cos_a = cos(angle);
+    double sin_a = sin(angle);
+    
+    double new_x = x * cos_a - y * sin_a;
+    double new_y = x * sin_a + y * cos_a;
+    
+    return SqDot(new_x, new_y);
+}
+
+SqDot SqDot::down_rotate(const double& angle) const { 
+    return up_rotate(-angle);
+}
+
+SqDot SqDot::up_rot_round(const double& angle, const SqDot& center) const {
+    auto temp = *this - center;
+    temp = temp.up_rotate(angle);
+    return temp + center;
+}
+
+SqDot SqDot::down_rot_round(const double& angle, const SqDot& center) const { 
+    return up_rot_round(-angle, center);
 }
 
 /**
@@ -50,8 +141,7 @@ SqDot SqDot::scale(double scale) const {
  */
 SqDot SqDot::central_restore(const double& scale) const {
     auto offset = 0.5 / scale;
-    return SqDot(static_cast<int>(std::round(x / scale + offset - 0.5)), 
-                static_cast<int>(std::round(y / scale + offset - 0.5)));
+    return SqDot(x / scale + offset - 0.5, y / scale + offset - 0.5);
 }
 
 /**
@@ -61,7 +151,8 @@ SqDot SqDot::central_restore(const double& scale) const {
  * @return 如果两点坐标相同则返回true，否则返回false
  */
 bool SqDot::operator==(const SqDot& other) const {
-    return x == other.x && y == other.y;
+    const double epsilon = 1e-9;
+    return std::abs(x - other.x) < epsilon && std::abs(y - other.y) < epsilon;
 }
 
 /**
@@ -81,7 +172,19 @@ bool SqDot::operator!=(const SqDot& other) const {
  * @return 比较结果
  */
 bool SqDot::operator<(const SqDot& other) const {
-    return (x < other.x) || (x == other.x && y < other.y);
+    const double epsilon = 1e-9;
+    if (std::abs(x - other.x) > epsilon) {
+        return x < other.x;
+    }
+    return y < other.y;
+}
+
+SqDot SqDot::operator+(const SqDot& other) const { 
+    return SqDot(x + other.x, y + other.y);
+}
+
+SqDot SqDot::operator-(const SqDot& other) const { 
+    return SqDot(x - other.x, y - other.y);
 }
 
 /**
@@ -90,7 +193,7 @@ bool SqDot::operator<(const SqDot& other) const {
  * @param scale 缩放比例
  * @return 缩放后的索引
  */
-int SqDot::sx(double& scale) const { 
+int SqDot::sx(double scale) const { 
     return index_scale(x, scale);
 }
 
@@ -100,7 +203,7 @@ int SqDot::sx(double& scale) const {
  * @param scale 缩放比例
  * @return 缩放后的索引
  */
-int SqDot::sy(double& scale) const { 
+int SqDot::sy(double scale) const { 
     return index_scale(y, scale);
 }
 
@@ -110,7 +213,7 @@ int SqDot::sy(double& scale) const {
  * @param scale 缩放比例
  * @return 缩放后的坐标点
  */
-SqDot SqDot::scale(double& scale) { 
+SqDot SqDot::scale(double scale) { 
     return SqDot(sx(scale), sy(scale));
 }
 
@@ -121,7 +224,7 @@ SqDot SqDot::scale(double& scale) {
  * @return 两点的中心点
  */
 SqDot SqDot::center(const SqDot& other) {
-    return SqDot(x + other.x / 2, y + other.y / 2);
+    return SqDot((x + other.x) / 2.0, (y + other.y) / 2.0);
 }
 
 /**
@@ -133,7 +236,7 @@ SqDot SqDot::center(const SqDot& other) {
 SqDot SqDot::get_neighbour(int index) const { 
     static const std::array<int, 4> dx = {-1, 1, 0, 0};
     static const std::array<int, 4> dy = {0, 0, -1, 1};
-    return SqDot(x + dx[index], y + dy[index]);
+    return SqDot(x_index() + dx[index], y_index() + dy[index]);
 }
 
 /**
@@ -161,7 +264,8 @@ std::vector<SqDot> SqDot::get_neighbour(int x_ceil, int y_ceil) const {
     for (int idx = 0; idx < 4; idx++) {
         SqDot neighbour = get_neighbour(idx);
 
-        if (neighbour.x >= 0 && neighbour.x < x_ceil && neighbour.y >= 0 && neighbour.y < y_ceil) {
+        if (neighbour.x_index() >= 0 && neighbour.x_index() < x_ceil && 
+            neighbour.y_index() >= 0 && neighbour.y_index() < y_ceil) {
             neighbours.push_back(neighbour);
         }
     }
@@ -178,15 +282,18 @@ double SqDot::distance(const SqDot& p) const {
     return sqrt(pow(x - p.x, 2) + pow(y - p.y, 2));
 }
 
-/**
- * @brief 哈希函数，用于在哈希表中存储SqDot对象
- * 
- * @param p 点对象
- * @return 哈希值
- */
-std::size_t SqDotHash::operator()(const SqDot& p) const {
+double SqDot::angle(const SqDot& other) const { 
+    return atan2(other.y - y, other.x - x);
+}
 
-    return std::hash<int>()(p.x) ^ (std::hash<int>()(p.y) << 1);
+/**
+ * @brief 计算两点连线的绝对角度
+ * 
+ * @param other 另一个点
+ * @return 两点连线与x轴正方向的夹角（弧度）
+ */
+double SqDot::line_angle(const SqDot& other) const {
+    return atan2(other.y - y, other.x - x);
 }
 
 /**
@@ -196,6 +303,18 @@ std::size_t SqDotHash::operator()(const SqDot& p) const {
  */
 SqPlain::SqPlain(std::vector<std::vector<double>> map): map(std::move(map)) {
     return;
+}
+
+SqLine::SqLine() {}
+
+SqLine::SqLine(double a, double b, double c): a(a), b(b), c(c) {}
+
+SqLine::SqLine(const SqDot& p1, const SqDot& p2): a(p1.y - p2.y), b(p2.x - p1.x), c(p1.x * p2.y - p2.x * p1.y){}
+
+SqLine::SqLine(const SqDot& point, double angle): a(sin(angle)),
+    b(-cos(angle)), c(cos(angle) * point.y - sin(angle) * point.x) {}
+double SqLine::distance(const SqDot& dot) const { 
+    return fabs(a * dot.x + b * dot.y + c) / sqrt(a * a + b * b);
 }
 
 /**
@@ -218,7 +337,7 @@ SqPlain::SqPlain() {}
  * @param point 检查的点
  * @return 如果点在地图范围内且可通行返回true，否则返回false
  */
-bool SqPlain::edge_allowed(SqDot point) {
+bool SqPlain::edge_allowed(const SqDot& point) const {
 
     if (point.x < 0 || point.x >= map.size() || point.y < 0 || point.y >= map[0].size()) {
         return false;
@@ -239,7 +358,7 @@ bool SqPlain::edge_allowed(SqDot point) {
  * @param idx 方向索引
  * @return 对应方向的邻居点
  */
-SqDot SqPlain::get_neighbour(SqDot point, int idx) {
+SqDot SqPlain::get_neighbour(const SqDot& point, int idx) const {
 
     static const std::array<int, 4> dx = {-1, 1, 0, 0};
     static const std::array<int, 4> dy = {0, 0, -1, 1};
@@ -254,7 +373,7 @@ SqDot SqPlain::get_neighbour(SqDot point, int idx) {
  * @param point 原始点
  * @return 有效邻居点的向量
  */
-std::vector<SqDot> SqPlain::get_valid_neighbours(SqDot point) {
+std::vector<SqDot> SqPlain::get_valid_neighbours(const SqDot& point) const {
     std::vector<SqDot> valid_neighbours;
     for (int idx = 0; idx < 4; idx++) {
         SqDot neighbour = get_neighbour(point, idx);
@@ -273,7 +392,7 @@ std::vector<SqDot> SqPlain::get_valid_neighbours(SqDot point) {
  */
 SqDot SqPlain::orth_near(const SqDot& point) const { 
 
-    return SqDot(std::min(point.x, rows() - 1), std::min(point.y, cols() - 1));
+    return SqDot(std::min(point.x_index(), rows() - 1), std::min(point.y_index(), cols() - 1));
 }
 
 /**
@@ -283,7 +402,7 @@ SqDot SqPlain::orth_near(const SqDot& point) const {
  * @param se 第二个点
  * @return 区域的中心点
  */
-SqDot SqPlain::local_center(SqDot& fi, SqDot& se) {
+SqDot SqPlain::local_center(SqDot& fi, SqDot& se) const {
 
     SqDot bounded_first = orth_near(fi);
     SqDot bounded_second = orth_near(se);
@@ -304,7 +423,7 @@ SqDot SqPlain::local_center(SqDot& fi, SqDot& se) {
  * @param point 原始点
  * @return 邻居点的向量
  */
-std::vector<SqDot> SqPlain::get_neighbour(SqDot point) {
+std::vector<SqDot> SqPlain::get_neighbour(const SqDot& point) const {
     std::vector<SqDot> neighbours;
     for (int idx = 0; idx < 4; idx++) {
         neighbours.emplace_back(get_neighbour(point, idx));
@@ -319,7 +438,7 @@ std::vector<SqDot> SqPlain::get_neighbour(SqDot point) {
  * @param goal 终点
  * @return 路径点序列
  */
-std::vector<SqDot> SqPlain::find_path(SqDot start, SqDot goal) {
+std::vector<SqDot> SqPlain::find_path(SqDot start, SqDot goal) const {
 
     std::priority_queue<std::pair<double, SqDot>, 
                         std::vector<std::pair<double, SqDot>>, 
@@ -362,32 +481,21 @@ std::vector<SqDot> SqPlain::find_path(SqDot start, SqDot goal) {
         }
         
 
+        if (closed_set.find(current) != closed_set.end()) {
+            continue;
+        }
         closed_set.insert(current);
         
 
-        for (int idx = 0; idx < 4; idx++) {
-            SqDot neighbor = get_neighbour(current, idx);
-            
+        for (const auto& neighbor : get_valid_neighbours(current)) {
 
-            if (!edge_allowed(neighbor)) {
-                continue;
-            }
-            
-
-            if (closed_set.find(neighbor) != closed_set.end()) {
-                continue;
-            }
-            
-
-            double tentative_g_score = g_score[current] + map[neighbor.x][neighbor.y];
+            double tentative_g_score = g_score[current] + cost(current, neighbor);
             
 
             if (g_score.find(neighbor) == g_score.end() || tentative_g_score < g_score[neighbor]) {
                 came_from[neighbor] = current;
                 g_score[neighbor] = tentative_g_score;
                 f_score[neighbor] = g_score[neighbor] + std::sqrt(std::pow(neighbor.x - goal.x, 2) + std::pow(neighbor.y - goal.y, 2));
-                
-
                 open_set.push({f_score[neighbor], neighbor});
             }
         }
@@ -403,7 +511,7 @@ std::vector<SqDot> SqPlain::find_path(SqDot start, SqDot goal) {
  * @param scale 缩放比例
  * @return 缩放后的地图
  */
-SqPlain SqPlain::scale_graph(double scale) {
+SqPlain SqPlain::scale_graph(const double& scale) const {
 
     int new_rows = static_cast<int>(std::ceil(map.size() * scale));
     int new_cols = static_cast<int>(std::ceil(map[0].size() * scale));
@@ -442,7 +550,7 @@ SqPlain SqPlain::scale_graph(double scale) {
  * @param scale 缩放比例
  * @return 缩放后的地图
  */
-SqPlain SqPlain::scale_graph_variance(double scale) {
+SqPlain SqPlain::scale_graph_variance(double scale) const {
 
     if (scale <= 0.0) {
         return *this;
@@ -540,9 +648,25 @@ SqPlain SqPlain::scale_graph_variance(double scale) {
  * @param side_length 区域边长
  * @return 区域汇总值
  */
-double SqPlain::summary(SqDot& center, int side_length) {
+double SqPlain::summary(SqDot& center, int side_length) const {
+    double total = 0.0;
+    int count = 0;
 
-    return FastFlatnessEvaluator::evaluate(*this, center, side_length);
+    for (int dx = -side_length; dx <= side_length; dx++) {
+        for (int dy = -side_length; dy <= side_length; dy++) {
+            int current_x = center.x + dx;
+            int current_y = center.y + dy;
+            
+
+            if (current_x >= 0 && current_x < map.size() && 
+                current_y >= 0 && current_y < map[0].size()) {
+                total += map[current_x][current_y];
+                count++;
+            }
+        }
+    }
+
+    return count > 0 ? total / count : std::numeric_limits<double>::infinity();
 }
 
 /**
@@ -619,7 +743,7 @@ const std::vector<double>& SqPlain::operator[](int index) const {
  * @param to 终点
  * @return 移动代价
  */
-double SqPlain::cost(SqDot& at, SqDot& to) {
+double SqPlain::cost(const SqDot& at, const SqDot& to) const {
     return manhattan_distance(at, to) + map[to.x][to.y];
 }
 
@@ -712,8 +836,8 @@ SqDot CuDot::slide() {
     double unit_y = y / xy_magnitude;
     
 
-    int slide_x = static_cast<int>(round(unit_x * slide_magnitude));
-    int slide_y = static_cast<int>(round(unit_y * slide_magnitude));
+    auto slide_x = unit_x * slide_magnitude;
+    auto slide_y = unit_y * slide_magnitude;
     
     return SqDot(slide_x, slide_y);
 }

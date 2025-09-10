@@ -4,33 +4,29 @@ project(trapla)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 添加头文件目录
-include_directories(include)
+file(GLOB SOURCE src/*/*.cpp)
 
-# 添加源文件（排除main.cpp）
-file(GLOB_RECURSE SOURCES "src/*.cpp")
-list(FILTER SOURCES EXCLUDE REGEX "main.cpp")
+# 添加可执行文件
+add_executable(trapla src/main.cpp 
+                    ${SOURCE})
 
-# 创建主可执行文件
-add_executable(trapla src/main.cpp ${SOURCES})
+# 添加测试文件
+add_executable(constraints_test tests/constraints_test.cpp 
+                    ${SOURCE})
 
-# 添加测试可执行文件
-add_executable(aStar_test tests/aStar_test.cpp ${SOURCES})
-add_executable(ground_test tests/ground_test.cpp ${SOURCES})
-add_executable(utils_test tests/utils_test.cpp ${SOURCES})
-add_executable(comparison_test tests/comparison_test.cpp ${SOURCES})
+# 设置包含目录
+target_include_directories(trapla PRIVATE include)
+target_include_directories(constraints_test PRIVATE include)
 
-# 链接数学库和文件系统库（如果需要）
-if(UNIX)
-    target_link_libraries(trapla m)
-    target_link_libraries(aStar_test m stdc++fs)
-    target_link_libraries(ground_test m stdc++fs)
-    target_link_libraries(utils_test m stdc++fs)
-    target_link_libraries(comparison_test m stdc++fs)
+# 链接数学库（在某些系统上需要）
+if(WIN32)
+    target_link_libraries(trapla PRIVATE ws2_32)
+    target_link_libraries(constraints_test PRIVATE ws2_32)
 else()
-    # Windows下链接文件系统库
-    target_link_libraries(aStar_test stdc++fs)
-    target_link_libraries(ground_test stdc++fs)
-    target_link_libraries(utils_test stdc++fs)
-    target_link_libraries(comparison_test stdc++fs)
+    target_link_libraries(trapla PRIVATE m)
+    target_link_libraries(constraints_test PRIVATE m)
 endif()
+
+# 指定C++标准
+set_target_properties(trapla PROPERTIES CXX_STANDARD 17)
+set_target_properties(constraints_test PROPERTIES CXX_STANDARD 17)

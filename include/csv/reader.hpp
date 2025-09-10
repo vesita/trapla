@@ -8,13 +8,13 @@
 #include <iostream>
 #include <fstream>
 
-class Reader { 
+class CSVReader { 
 public:
     
-    Reader();
+    CSVReader();
     
     
-    ~Reader();
+    ~CSVReader();
     
     
     bool readFromFile(const std::string& filename);

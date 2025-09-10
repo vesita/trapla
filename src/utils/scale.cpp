@@ -12,3 +12,17 @@
 int index_scale(double index, double scale) {
     return static_cast<int>(std::ceil(index * scale));
 }
+
+/**
+ * @brief 以origin为原点对input点进行缩放
+ * 
+ * @param origin 原点
+ * @param input 输入点
+ * @param scale 缩放因子
+ * @return 缩放后的点
+ */
+SqDot scale_dot(const SqDot& origin, const SqDot& input, int scale) {
+    int new_x = origin.x + (input.x - origin.x) * scale;
+    int new_y = origin.y + (input.y - origin.y) * scale;
+    return SqDot(new_x, new_y);
+}

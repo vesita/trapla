@@ -112,6 +112,16 @@
 - **平面拟合**：使用三点迭代算法计算最佳接触平面
 - **姿态评估**：计算足部法向量与重力方向的夹角
 
+#### 3.2.4 双足间距约束检查
+
+双足间距约束检查采用几何计算方法：
+
+- **近侧外形线**：定义支撑脚靠近摆动脚一侧的长边所在的直线
+- **距离计算**：计算摆动脚四角到近侧外形线的垂直距离
+- **最小距离**：选取四角中到近侧外形线的最小距离
+- **实际间距**：最小距离减去支撑脚半宽得到实际双足间距
+- **约束验证**：验证计算出的间距是否在2-10单位允许范围内
+
 ## 4. 技术实现
 
 ### 4.1 核心数据结构
@@ -140,7 +150,7 @@
 
 ### 5.1 源代码目录结构
 
-```index
+```
 src/
 ├── aStar/              # A*算法实现
 │   └── aStar.cpp       # A*算法核心实现
@@ -156,11 +166,12 @@ src/
 │   ├── fast_flatness.cpp # 快速平整度评估实现
 │   └── scale.cpp       # 缩放功能实现
 └── main.cpp            # 主程序入口
+
 ```
 
 ### 5.2 头文件目录结构
 
-```index
+```
 include/
 ├── aStar/
 │   └── aStar.hpp       # A*算法头文件
@@ -182,13 +193,14 @@ include/
 
 ### 5.3 测试目录结构
 
-```index
+```
 tests/
 ├── aStar_test.cpp      # A*算法测试
 ├── ground_test.cpp     # 地面处理测试
 ├── utils_test.cpp      # 工具模块测试
 ├── comparison_test.cpp # 对比测试
 └── run_tests.py        # 测试运行脚本
+
 ```
 
 ## 6. 编译和构建
@@ -197,20 +209,20 @@ tests/
 
 ### 6.1 构建步骤
 
-1. 创建构建目录：
+6.1.1. 创建构建目录：
 
    ```bash
    mkdir build
    cd build
    ```
 
-2. 配置项目：
+6.1.2. 配置项目：
 
    ```bash
    cmake ..
    ```
 
-3. 编译项目：
+6.1.3. 编译项目：
 
    ```bash
    make
@@ -224,7 +236,9 @@ tests/
 - `aStar_test`：A*算法测试程序
 - `ground_test`：地面处理测试程序
 - `utils_test`：工具模块测试程序
+- `foot_test`：足部相关测试程序
 - `comparison_test`：对比测试程序
+- `constraints_test`：约束条件测试程序
 
 ## 7. 运行和测试
 
@@ -239,7 +253,124 @@ tests/
 在项目根目录下执行：
 
 ```bash
-python scripts/run_tests.py
+python tests/run_tests.py
+```
+
+或者在Windows系统上：
+
+```cmd
+scripts\platform\windows\run_tests.bat
+```
+
+### 7.3 测试框架使用说明
+
+项目采用统一的测试框架，具有以下特点：
+
+1. 使用[TestFramework](../../include/utils/test_framework.hpp)类管理测试用例执行
+2. 使用[TEST](../../include/utils/test_framework.hpp)宏定义测试用例
+3. 集成测试失败数据收集和CSV输出功能
+4. 自动将失败数据写入CSV文件，便于分析
+5. 统一的测试报告格式
+6. 支持详细日志记录
+
+使用示例：
+
+```cpp
+TEST(example_test) {
+    // 定义测试用例
+    std::vector<std::tuple<InputType, ExpectedType>> test_cases = {
+        {input1, expected1},
+        {input2, expected2}
+    };
+
+    // 获取测试框架实例
+    auto& framework = TestFramework::getInstance();
+    const std::string testName = "测试名称";
+    
+    // 执行测试
+    for (const auto& test_case : test_cases) {
+        // 执行测试逻辑
+        auto result = function_to_test(input);
+        
+        // 检查结果
+        if (result != expected) {
+            // 收集失败数据
+            framework.addFailure(testName, {input, expected, result});
+        }
+    }
+    
+    // 定义列名
+    std::vector<std::string> columnNames = {"input", "expected", "result"};
+    
+    // 写入失败数据到CSV文件
+    framework.writeFailures(testName, "failure_data.csv", columnNames);
+    
+    // 如果有失败的测试用例，则抛出异常
+    framework.throwIfFailed(testName, "测试失败");
+}
+
+```
+
+所有测试都遵循统一的模式：
+
+1. 定义测试用例集合
+2. 获取[TestFramework](../../include/utils/test_framework.hpp)实例
+3. 定义测试名称
+4. 执行测试逻辑并收集失败用例
+5. 定义CSV列名
+6. 调用[writeFailures](../../include/utils/test_framework.hpp)方法将失败数据写入CSV文件
+7. 调用[throwIfFailed](../../include/utils/test_framework.hpp)方法在有失败用例时抛出异常
+
+这种统一的测试风格可以：
+
+- 更好地收集和分析失败的测试用例
+- 自动生成CSV报告便于调试
+- 提供一致的测试接口和错误处理机制
+- 提高测试代码的可维护性
+
+### 7.4 测试框架组件详解
+
+#### 7.4.1 TestFramework类
+
+[TestFramework](../../include/utils/test_framework.hpp)是测试框架的核心类，负责管理测试用例的注册和执行。
+
+主要方法：
+
+- [getInstance()](../../include/utils/test_framework.hpp) - 获取单例实例
+- [setWorkingDirectory()](../../include/utils/test_framework.hpp) - 设置工作目录
+- [setLogFile()](../../include/utils/test_framework.hpp) - 设置日志文件
+- [addTest()](../../include/utils/test_framework.hpp) - 添加测试用例
+- [log()](../../include/utils/test_framework.hpp) - 记录日志信息
+- [addFailure()](../../include/utils/test_framework.hpp) - 添加失败数据
+- [hasFailures()](../../include/utils/test_framework.hpp) - 检查是否有失败数据
+- [failureCount()](../../include/utils/test_framework.hpp) - 获取失败数据数量
+- [writeFailures()](../../include/utils/test_framework.hpp) - 将失败数据写入CSV文件
+- [throwIfFailed()](../../include/utils/test_framework.hpp) - 如果有失败数据则抛出异常
+- [clearFailures()](../../include/utils/test_framework.hpp) - 清除指定测试的失败数据
+- [runTests()](../../include/utils/test_framework.hpp) - 运行所有测试用例
+
+#### 7.4.2 TEST宏
+
+[TEST](../../include/utils/test_framework.hpp)宏用于定义测试用例，自动注册到[TestFramework](../../include/utils/test_framework.hpp)中。
+
+使用方法：
+
+```cpp
+TEST(test_name) {
+    // 测试代码
+}
+```
+
+#### 7.4.3 TestFailureCollector类（已集成到TestFramework）
+
+TestFailureCollector类的功能已集成到TestFramework类中，提供更简洁的接口用于失败数据收集和报告生成。
+
+### 7.5 测试运行方式
+
+在项目根目录下执行：
+
+```bash
+python tests/run_tests.py
 ```
 
 或者在Windows系统上：

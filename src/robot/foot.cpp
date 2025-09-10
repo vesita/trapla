@@ -1,9 +1,9 @@
 #include "robot/foot.hpp"
 
 /**
- * @brief 默认构造函数，创建一个空的足部形状对象
+ * @brief 默认构造函数，创建一个位于原点的足部形状对象
  */
-FootShape::FootShape(): length(0), width(0) {
+FootShape::FootShape(): length(0.0), width(0.0) {
     return;
 }
 
@@ -32,36 +32,6 @@ bool FootShape::inside(double l_side, double w_side) {
     } else {
         return false;
     }
-}
-
-/**
- * @brief 计算足部在特定朝向下的覆盖区域
- * 
- * @param rz_of_foot 足部朝向角（弧度）
- * @return 足部覆盖的点集合
- */
-std::vector<SqDot> FootShape::cover(double& rz_of_foot) {
-
-    std::unordered_set<SqDot, SqDotHash> point_set{};
-    
-    auto half_length = length / 2.0;
-    auto half_width = width / 2.0;
-
-    double scan_step = 0.5; 
-    
-
-    for (double l = -half_length; l <= half_length; l += scan_step) {
-        for (double w = -half_width; w <= half_width; w += scan_step) {
-
-            double world_l = l * cos(rz_of_foot) - w * sin(rz_of_foot);
-            double world_w = l * sin(rz_of_foot) + w * cos(rz_of_foot);
-
-            point_set.insert(SqDot(static_cast<int>(round(world_l)), static_cast<int>(round(world_w))));
-        }
-    }
-    
-
-    return std::vector<SqDot>(point_set.begin(), point_set.end());
 }
 
 /**
@@ -180,9 +150,14 @@ SlideResult FootShape::slide(std::vector<SqDot>& area, Ground& ground) {
 /**
  * @brief 默认构造函数，创建一个位于原点的足部对象
  */
-Foot::Foot(): x(0), y(0), rz(0) {
+Foot::Foot(): position(SqDot(0.0, 0.0)), rz(0.0), shape(0.0, 0.0) {
     return;
 }
+
+Foot::Foot(SqDot pos, double rz): position(pos), rz(rz), shape(0.0, 0.0) {}
+
+Foot::Foot(SqDot pos, double rz, double shape_length, double shape_width): 
+    position(pos), rz(rz), shape(shape_length, shape_width) {}
 
 /**
  * @brief 设置足部位置和朝向
@@ -192,30 +167,88 @@ Foot::Foot(): x(0), y(0), rz(0) {
  * @param rz 朝向角（弧度）
  */
 void Foot::set(double x, double y, double rz) {
-    this->x = x;
-    this->y = y;
+    position.set(x, y);
     this->rz = rz;
+}
+
+Foot Foot::next(const SqDot& new_pos) const {
+    // 定义激活距离阈值，只有当步长超过此距离时，脚的朝向才会改变
+    const double activation_distance = 10.0;
+    
+    // 计算步长
+    double stride = position.distance(new_pos);
+    
+    // 如果步长超过激活距离，则计算新的朝向角，否则保持原朝向
+    double new_rz = (stride >= activation_distance) ? position.angle(new_pos) : this->rz;
+    
+    return Foot(new_pos, new_rz, shape.length, shape.width);
+}
+
+double Foot::direction_delta(const Foot& other) const {
+    return other.rz - rz;
+}
+
+std::vector<SqDot> Foot::cover() const {
+        std::unordered_set<SqDot, SqDotHash> point_set{};
+    
+    auto half_length = shape.length / 2.0;
+    auto half_width = shape.width / 2.0;
+
+    double scan_step = 0.5; 
+    
+
+    for (double l = -half_length; l <= half_length; l += scan_step) {
+        for (double w = -half_width; w <= half_width; w += scan_step) {
+
+            double world_l = position.x + l * cos(rz) - w * sin(rz);
+            double world_w = position.y + l * sin(rz) + w * cos(rz);
+
+            point_set.insert(SqDot(round(world_l), round(world_w)));
+        }
+    }
+    
+
+    return std::vector<SqDot>(point_set.begin(), point_set.end());
+}
+
+std::vector<SqDot> Foot::corner() const {
+
+    std::vector<SqDot> points{};
+    
+
+    double half_length = shape.length / 2.0;
+    double half_width = shape.width / 2.0;
+
+    double l_cos = half_length * cos(rz);
+    double l_sin = half_length * sin(rz);
+    double w_cos = half_width * cos(rz);
+    double w_sin = half_width * sin(rz);
+
+    // 计算四个角点的坐标
+    points.emplace_back(position.x + l_cos - w_sin, position.y + l_sin + w_cos);
+    points.emplace_back(position.x + l_cos + w_sin, position.y + l_sin - w_cos);
+    points.emplace_back(position.x - l_cos + w_sin, position.y - l_sin - w_cos);
+    points.emplace_back(position.x - l_cos - w_sin, position.y - l_sin + w_cos);
+    return points;
 }
 
 /**
  * @brief 让足部走向指定位置
  * 
  * @param ground 地形对象
- * @param shape 足部形状
  * @return 如果成功走向指定位置返回true，否则返回false
  */
-bool Foot::walkto(Ground& ground, FootShape& shape) { 
+bool Foot::walkto(Ground& ground) { 
 
     if (ground.empty()) {
         return false;
     }
-    
 
     int rows = ground.map.rows();
     int cols = ground.map.cols();
     
 
-    if (x < 0 || x >= rows || y < 0 || y >= cols) {
+    if (position.x < 0 || position.x >= rows || position.y < 0 || position.y >= cols) {
         return false;
     }
 

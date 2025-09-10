@@ -8,7 +8,7 @@
  * @param filename 地形数据文件路径
  */
 Ground::Ground(std::string filename) {
-    Reader reader;
+    CSVReader reader;
     try {
         if (!reader.readFromFile(filename)) {
             std::cout << "错误: 无法读取文件 " << filename << std::endl;
@@ -20,6 +20,9 @@ Ground::Ground(std::string filename) {
         std::cout << "错误: " << e.what() << std::endl;
         return;
     }
+}
+
+Ground::Ground(int rows, int cols) : map(rows, cols, 0.0) {
 }
 
 /**
@@ -226,4 +229,35 @@ CuPlain Ground::convex_trip(std::vector<SqDot>& area) {
  */
 bool Ground::empty() const { 
     return map.empty(); 
+}
+
+bool Ground::is_valid(const SqDot& point) const {
+    return !map.empty() && point.x >= 0 && point.x < map.rows() && point.y >= 0 && point.y < map.cols();
+}
+
+bool Ground::is_valid(const int& x, const int& y) const { 
+    return !map.empty() && x >= 0 && x < map.rows() && y >= 0 && y < map.cols();
+}
+
+bool Ground::obstacle(const int& x, const int& y) const {
+    if (!is_valid(x, y)) {
+        return true;
+    }
+    return map[x][y] < 0.0;
+}
+
+bool Ground::set_unit(const int& x, const int& y, bool is_obstacle) {
+    if (!is_valid(x, y)) {
+        return false;
+    }
+    map[x][y] = is_obstacle ? -1.0 : 0.0;
+    return true;
+}
+
+int Ground::rows() const { 
+    return map.rows(); 
+}
+
+int Ground::cols() const { 
+    return map.cols(); 
 }

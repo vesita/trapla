@@ -11,7 +11,7 @@
  * @param goal 终点坐标
  * @return 从起点到终点的路径点序列
  */
-std::vector<SqDot> a_star_search(SqPlain& graph, SqDot start, SqDot goal) {
+std::vector<SqDot> a_star_search(const SqPlain& graph, const SqDot& start, const SqDot& goal) {
     using que_unit = std::pair<double, SqDot>;
     auto cmp = [](const que_unit& a, const que_unit& b) {
         return a.first > b.first;
@@ -74,7 +74,7 @@ std::vector<SqDot> a_star_search(SqPlain& graph, SqDot start, SqDot goal) {
  * @param stride 步长参数，用于计算缩放比例
  * @return 在原始地图上的引导点序列
  */
-std::vector<SqDot> scale_star(SqPlain& graph, SqDot start, SqDot goal, double stride) {
+std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const SqDot& goal, const double& stride) {
     auto scale = 1.0/stride;
 
     auto ss = start.scale(scale);
@@ -102,7 +102,6 @@ std::vector<SqDot> scale_star(SqPlain& graph, SqDot start, SqDot goal, double st
             auto block_pair = graph.restore(next, scale);
             auto steep = steep_extend(graph, block_pair.first, block_pair.second);
             
-
             if (steep < 0) {
                 continue;
             }
@@ -140,7 +139,7 @@ std::vector<SqDot> scale_star(SqPlain& graph, SqDot start, SqDot goal, double st
  * @param stride 步长参数，用于计算缩放比例
  * @return 在缩放地图上的路径点序列
  */
-std::vector<SqDot> scale_star_on_scaled_map(SqPlain& graph, SqDot start, SqDot goal, double stride) {
+std::vector<SqDot> scale_star_on_scaled_map(const SqPlain& graph, SqDot start, SqDot goal, double stride) {
     auto scale = 1.0/stride;
 
     auto ss = start.scale(scale);
@@ -168,7 +167,6 @@ std::vector<SqDot> scale_star_on_scaled_map(SqPlain& graph, SqDot start, SqDot g
             auto block_pair = graph.restore(next, scale);
             auto steep = steep_extend(graph, block_pair.first, block_pair.second);
             
-
             if (steep < 0) {
                 continue;
             }
@@ -235,23 +233,6 @@ std::vector<SqDot> discrete_guide(SqPlain& graph, double stride, SqDot start, Sq
 }
 
 /**
- * @brief 改进的离散引导点生成函数
- * 
- * 使用scale_star算法生成引导点序列
- * 
- * @param graph 原始地图
- * @param stride 步长
- * @param start 起点
- * @param goal 终点
- * @param foot_size 足部尺寸
- * @return 原始地图上的引导点序列
- */
-std::vector<SqDot> discrete_guide_improved(SqPlain& graph, double stride, SqDot start, SqDot goal, double foot_size) {
-
-    return scale_star(graph, start, goal, stride);
-}
-
-/**
  * @brief 计算两点间区域的陡峭程度
  * 
  * 该函数评估两点定义的区域的地形陡峭程度，用于路径规划中的代价计算
@@ -261,8 +242,9 @@ std::vector<SqDot> discrete_guide_improved(SqPlain& graph, double stride, SqDot 
  * @param se 第二个点
  * @return 区域的陡峭程度评分，负值表示不可行区域
  */
-double steep_extend(SqPlain& graph, SqDot& fi, SqDot& se) {
+double steep_extend(const SqPlain& graph, SqDot& fi, SqDot& se) {
 
+    // 确保 orth_near 正确限制点的坐标在地图范围内
     SqDot bounded_first = graph.orth_near(fi);
     SqDot bounded_second = graph.orth_near(se);
     

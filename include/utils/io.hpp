@@ -9,23 +9,23 @@
 
 class IOManager {
 public:
-    static IOManager& getInstance() {
+    static IOManager& get_instance() {
         static IOManager instance;
         return instance;
     }
     
 
-    void setWorkingDirectory(const std::string& workingDir) {
+    void set_work_path(const std::string& workingDir) {
         workingDirectory = workingDir;
     }
     
 
-    std::string getWorkingDirectory() const {
+    std::string get_work_path() const {
         return workingDirectory;
     }
     
 
-    std::string buildPath(const std::string& relativePath) const {
+    std::string build_path(const std::string& relativePath) const {
         if (workingDirectory.empty()) {
             return relativePath;
         }
@@ -44,7 +44,7 @@ public:
     
 
     std::unique_ptr<std::ofstream> createOutputFile(const std::string& relativePath) const {
-        std::string fullPath = buildPath(relativePath);
+        std::string fullPath = build_path(relativePath);
         createDirectories(fullPath);
         
         auto file = std::make_unique<std::ofstream>(fullPath);
@@ -57,7 +57,7 @@ public:
     
 
     std::unique_ptr<std::ifstream> createInputFile(const std::string& relativePath) const {
-        std::string fullPath = buildPath(relativePath);
+        std::string fullPath = build_path(relativePath);
         
         auto file = std::make_unique<std::ifstream>(fullPath);
         if (!file->is_open()) {
@@ -74,7 +74,7 @@ private:
 };
 
 inline std::string buildPath(const std::string& relativePath) {
-    return IOManager::getInstance().buildPath(relativePath);
+    return IOManager::get_instance().build_path(relativePath);
 }
 
 #endif

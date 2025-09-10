@@ -1,16 +1,15 @@
-#include "csvReader/reader.hpp"
-#include <filesystem>
+#include "csv/reader.hpp"
 
 /**
  * @brief 构造函数，初始化CSV读取器
  */
-Reader::Reader() : rows(0), cols(0) {
+CSVReader::CSVReader() : rows(0), cols(0) {
 }
 
 /**
  * @brief 析构函数
  */
-Reader::~Reader() {
+CSVReader::~CSVReader() {
 }
 
 /**
@@ -19,7 +18,7 @@ Reader::~Reader() {
  * @param filename 文件名
  * @return 如果读取成功返回true，否则返回false
  */
-bool Reader::readFromFile(const std::string& filename) {
+bool CSVReader::readFromFile(const std::string& filename) {
 
     std::filesystem::path filePath(filename);
     
@@ -81,7 +80,7 @@ bool Reader::readFromFile(const std::string& filename) {
  * 
  * @return CSV数据的常量引用
  */
-const std::vector<std::vector<double>>& Reader::getData() const {
+const std::vector<std::vector<double>>& CSVReader::getData() const {
     return data;
 }
 
@@ -90,7 +89,7 @@ const std::vector<std::vector<double>>& Reader::getData() const {
  * 
  * @return 数据行数
  */
-size_t Reader::getRows() const {
+size_t CSVReader::getRows() const {
     return rows;
 }
 
@@ -99,6 +98,6 @@ size_t Reader::getRows() const {
  * 
  * @return 数据列数
  */
-size_t Reader::getCols() const {
+size_t CSVReader::getCols() const {
     return cols;
 }
