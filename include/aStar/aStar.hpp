@@ -16,16 +16,16 @@
 #include "utils/geometry.hpp"
 #include "utils/scale.hpp"
 
-std::vector<SqDot> a_star_search(const SqPlain& graph, const SqDot& start, const SqDot& goal);
+std::vector<Intex> a_star_search(const SqPlain& graph, const Intex& start, const Intex& goal);
 
-std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const SqDot& goal, const double& stride);
+std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const Intex& goal, const double& stride);
 
-std::vector<SqDot> central_restore_guide(std::vector<SqDot>& guides, double scale, double unit_size);
+std::vector<Intex> central_restore_guide(std::vector<Intex>& guides, double scale, double unit_size);
 
-std::vector<SqDot> scale_star_on_scaled_map(const SqPlain& graph, SqDot start, SqDot goal, double stride);
+std::vector<Intex> scale_star_on_scaled_map(const SqPlain& graph, Intex start, Intex goal, double stride);
 
-std::vector<SqDot> discrete_guide(SqPlain& graph, double stride, SqDot start, SqDot goal);
+std::vector<Intex> discrete_guide(SqPlain& graph, double stride, Intex start, Intex goal);
 
-double steep_extend(const SqPlain& graph, SqDot& fi, SqDot& se);
+double steep_extend(const SqPlain& graph, Intex& fi, Intex& se);
 
 #endif

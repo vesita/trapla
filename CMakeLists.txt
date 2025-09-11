@@ -13,20 +13,26 @@ add_executable(trapla src/main.cpp
 # 添加测试文件
 add_executable(constraints_test tests/constraints_test.cpp 
                     ${SOURCE})
+add_executable(aStar_test tests/aStar_test.cpp 
+                    ${SOURCE})
 
 # 设置包含目录
 target_include_directories(trapla PRIVATE include)
 target_include_directories(constraints_test PRIVATE include)
+target_include_directories(aStar_test PRIVATE include)
 
 # 链接数学库（在某些系统上需要）
 if(WIN32)
     target_link_libraries(trapla PRIVATE ws2_32)
     target_link_libraries(constraints_test PRIVATE ws2_32)
+    target_link_libraries(aStar_test PRIVATE ws2_32)
 else()
     target_link_libraries(trapla PRIVATE m)
     target_link_libraries(constraints_test PRIVATE m)
+    target_link_libraries(aStar_test PRIVATE m)
 endif()
 
 # 指定C++标准
 set_target_properties(trapla PROPERTIES CXX_STANDARD 17)
 set_target_properties(constraints_test PROPERTIES CXX_STANDARD 17)
+set_target_properties(aStar_test PROPERTIES CXX_STANDARD 17)

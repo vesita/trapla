@@ -18,6 +18,7 @@ class CuPlain;
 #include <algorithm>
 
 #include "utils/scale.hpp"
+#include "utils/index.hpp"
 
 /**
  * @brief 计算两点间的曼哈顿距离
@@ -28,6 +29,8 @@ class CuPlain;
  */
 double manhattan_distance(const SqDot& a, const SqDot& b);
 
+double manhattan_distance(const Intex& a, const Intex& b);
+
 /**
  * @brief 计算两点间的欧几里得距离
  * 
@@ -36,6 +39,8 @@ double manhattan_distance(const SqDot& a, const SqDot& b);
  * @return 欧几里得距离值
  */
 double euclidean_distance(const SqDot& a, const SqDot& b);
+
+double euclidean_distance(const Intex& a, const Intex& b);
 
 /**
  * @brief 位置枚举，表示点相对于平面的位置关系
@@ -314,7 +319,8 @@ public:
      */
     SqDot orth_near(const SqDot& point) const;
 
-    
+    Intex orth_near(const Intex& point) const;
+
     /**
      * @brief 计算两点定义区域的中心点
      * 
@@ -333,6 +339,7 @@ public:
      */
     bool edge_allowed(const SqDot& point) const;
 
+    bool edge_allowed(const Intex& point) const;
     
     /**
      * @brief 获取指定点的邻居点
@@ -343,6 +350,7 @@ public:
      */
     SqDot get_neighbour(const SqDot& point, int idx) const;
 
+    Intex get_neighbour(const Intex& point, int idx) const;
     
     /**
      * @brief 获取指定点的所有邻居点
@@ -351,7 +359,8 @@ public:
      * @return 所有邻居点
      */
     std::vector<SqDot> get_neighbour(const SqDot& point) const;
-    
+
+    std::vector<Intex> get_neighbour(const Intex& point) const;
     
     /**
      * @brief 获取指定点的有效邻居点
@@ -361,7 +370,7 @@ public:
      */
     std::vector<SqDot> get_valid_neighbours(const SqDot& point) const;
     
-    
+    std::vector<Intex> get_valid_neighbours(const Intex& point) const;
     /**
      * @brief 使用A*算法查找从起点到终点的路径
      * 
@@ -469,7 +478,8 @@ public:
      */
     double cost(const SqDot& at, const SqDot& to) const;
 
-    
+    double cost(const Intex& at, const Intex& to) const;
+
     /**
      * @brief 恢复缩放点到原始地图坐标
      * 
@@ -479,6 +489,7 @@ public:
      */
     SqDot restore_dot(SqDot& dot, double scale) const;
 
+    Intex restore_dot(Intex& dot, double scale) const;
     
     /**
      * @brief 恢复缩放块到原始地图坐标
@@ -489,6 +500,7 @@ public:
      */
     std::pair<SqDot, SqDot> restore(const SqDot& block, double scale) const;
 
+    std::pair<Intex, Intex> restore(const Intex& block, double scale) const;
     
     /**
      * @brief 检查两个点是否在同一个缩放块中

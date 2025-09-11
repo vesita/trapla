@@ -11,17 +11,18 @@
  * @param goal 终点坐标
  * @return 从起点到终点的路径点序列
  */
-std::vector<SqDot> a_star_search(const SqPlain& graph, const SqDot& start, const SqDot& goal) {
-    using que_unit = std::pair<double, SqDot>;
+std::vector<Intex> a_star_search(const SqPlain& graph, const Intex& start, const Intex& goal) {
+
+    using que_unit = std::pair<double, Intex>;
     auto cmp = [](const que_unit& a, const que_unit& b) {
         return a.first > b.first;
     };
     std::priority_queue<que_unit, std::vector<que_unit>, decltype(cmp)> frontier(cmp);
     frontier.push({0.0, start});
-    std::vector<SqDot> came_from = std::vector<SqDot>(graph.rows() * graph.cols(), SqDot(-1, -1));
-    std::unordered_map<SqDot, double, SqDotHash> cost_so_far{{start, 0.0}};
+    std::vector<Intex> came_from = std::vector<Intex>(graph.rows() * graph.cols(), Intex(-1, -1));
+    std::unordered_map<Intex, double, IntexHash> cost_so_far{{start, 0.0}};
     while (!frontier.empty()) {
-        SqDot current = frontier.top().second;
+        auto current = frontier.top().second;
         frontier.pop();
         if (current == goal) break;
 
@@ -29,19 +30,19 @@ std::vector<SqDot> a_star_search(const SqPlain& graph, const SqDot& start, const
             auto new_cost = cost_so_far[current] + graph.cost(current, next);
             if (cost_so_far.find(next) == cost_so_far.end() || new_cost < cost_so_far[next]) {
                 cost_so_far[next] = new_cost;
-                double priority = new_cost + euclidean_distance(next, goal);
+                double priority = new_cost + manhattan_distance(next, goal);
                 frontier.push({priority, next});
                 came_from[next.x * graph.cols() + next.y] = current;
             }
         }
     }
 
-    std::vector<SqDot> path;
-    SqDot current = goal;
+    std::vector<Intex> path;
+    Intex current = goal;
     int max_steps = graph.rows() * graph.cols();
     int steps = 0;
     
-    while (current != SqDot(-1, -1) && current != start && steps < max_steps) {
+    while (current != Intex(-1, -1) && current != start && steps < max_steps) {
         path.push_back(current);
 
         if (current.x < 0 || current.x >= graph.rows() || current.y < 0 || current.y >= graph.cols()) {
@@ -74,7 +75,7 @@ std::vector<SqDot> a_star_search(const SqPlain& graph, const SqDot& start, const
  * @param stride 步长参数，用于计算缩放比例
  * @return 在原始地图上的引导点序列
  */
-std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const SqDot& goal, const double& stride) {
+std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const Intex& goal, const double& stride) {
     auto scale = 1.0/stride;
 
     auto ss = start.scale(scale);
@@ -82,7 +83,7 @@ std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const Sq
     auto sr = graph.row_scale(scale);
     auto sc = graph.col_scale(scale);
 
-    using que_unit = std::pair<double, SqDot>;
+    using que_unit = std::pair<double, Intex>;
     auto cmp = [](const que_unit& a, const que_unit& b) {
         return a.first > b.first;
     };
@@ -90,11 +91,11 @@ std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const Sq
     std::priority_queue<que_unit, std::vector<que_unit>, decltype(cmp)> frontier(cmp);
     frontier.push({0.0, ss});
 
-    std::vector<SqDot> came_from = std::vector<SqDot>(sr * sc, SqDot(-1, -1));
+    std::vector<Intex> came_from = std::vector<Intex>(sr * sc, Intex(-1, -1));
 
-    std::unordered_map<SqDot, double, SqDotHash> cost_so_far{{ss, 0.0}};
+    std::unordered_map<Intex, double, IntexHash> cost_so_far{{ss, 0.0}};
     while (!frontier.empty()) {
-        SqDot current = frontier.top().second;
+        Intex current = frontier.top().second;
         frontier.pop();
         if (current == sg) break;
         for (auto& next: current.get_neighbour(sr, sc)) {            
@@ -117,9 +118,9 @@ std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const Sq
     }
     
 
-    std::vector<SqDot> guides{goal};
-    SqDot current = came_from[sg.x * sc + sg.y];
-    while (current != SqDot(-1, -1) && current != ss) {
+    std::vector<Intex> guides{goal};
+    Intex current = came_from[sg.x * sc + sg.y];
+    while (current != Intex(-1, -1) && current != ss) {
         guides.emplace_back(graph.restore_dot(current, scale));
         current = came_from[current.x * sc + current.y];
     }
@@ -139,7 +140,7 @@ std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const Sq
  * @param stride 步长参数，用于计算缩放比例
  * @return 在缩放地图上的路径点序列
  */
-std::vector<SqDot> scale_star_on_scaled_map(const SqPlain& graph, SqDot start, SqDot goal, double stride) {
+std::vector<Intex> scale_star_on_scaled_map(const SqPlain& graph, Intex start, Intex goal, double stride) {
     auto scale = 1.0/stride;
 
     auto ss = start.scale(scale);
@@ -147,7 +148,7 @@ std::vector<SqDot> scale_star_on_scaled_map(const SqPlain& graph, SqDot start, S
     auto sr = graph.row_scale(scale);
     auto sc = graph.col_scale(scale);
 
-    using que_unit = std::pair<double, SqDot>;
+    using que_unit = std::pair<double, Intex>;
     auto cmp = [](const que_unit& a, const que_unit& b) {
         return a.first > b.first;
     };
@@ -155,11 +156,11 @@ std::vector<SqDot> scale_star_on_scaled_map(const SqPlain& graph, SqDot start, S
     std::priority_queue<que_unit, std::vector<que_unit>, decltype(cmp)> frontier(cmp);
     frontier.push({0.0, ss});
 
-    std::vector<SqDot> came_from = std::vector<SqDot>(sr * sc, SqDot(-1, -1));
+    std::vector<Intex> came_from = std::vector<Intex>(sr * sc, Intex(-1, -1));
 
-    std::unordered_map<SqDot, double, SqDotHash> cost_so_far{{ss, 0.0}};
+    std::unordered_map<Intex, double, IntexHash> cost_so_far{{ss, 0.0}};
     while (!frontier.empty()) {
-        SqDot current = frontier.top().second;
+        Intex current = frontier.top().second;
         frontier.pop();
         if (current == sg) break;
         for (auto& next: current.get_neighbour()) {            
@@ -182,9 +183,9 @@ std::vector<SqDot> scale_star_on_scaled_map(const SqPlain& graph, SqDot start, S
     }
     
 
-    std::vector<SqDot> path;
-    SqDot current = sg;
-    while (current != SqDot(-1, -1) && current != ss) {
+    std::vector<Intex> path;
+    Intex current = sg;
+    while (current != Intex(-1, -1) && current != ss) {
         path.emplace_back(current);
         current = came_from[current.x * sc + current.y];
     }
@@ -203,8 +204,8 @@ std::vector<SqDot> scale_star_on_scaled_map(const SqPlain& graph, SqDot start, S
  * @param unit_size 单元格大小
  * @return 原始地图上的中心点序列
  */
-std::vector<SqDot> central_restore_guide(std::vector<SqDot>& guides, double scale, double unit_size) {
-    std::vector<SqDot> path;
+std::vector<Intex> central_restore_guide(std::vector<Intex>& guides, double scale, double unit_size) {
+    std::vector<Intex> path;
     for (const auto& point : guides) {
         path.emplace_back(point.central_restore(scale));
     }
@@ -222,7 +223,7 @@ std::vector<SqDot> central_restore_guide(std::vector<SqDot>& guides, double scal
  * @param goal 终点
  * @return 原始地图上的引导点序列
  */
-std::vector<SqDot> discrete_guide(SqPlain& graph, double stride, SqDot start, SqDot goal) {
+std::vector<Intex> discrete_guide(SqPlain& graph, double stride, Intex start, Intex goal) {
     auto scale = 1.0/stride;
     auto scale_graph = graph.scale_graph(scale);
     auto scale_start = start.scale(scale);
@@ -242,11 +243,11 @@ std::vector<SqDot> discrete_guide(SqPlain& graph, double stride, SqDot start, Sq
  * @param se 第二个点
  * @return 区域的陡峭程度评分，负值表示不可行区域
  */
-double steep_extend(const SqPlain& graph, SqDot& fi, SqDot& se) {
+double steep_extend(const SqPlain& graph, Intex& fi, Intex& se) {
 
     // 确保 orth_near 正确限制点的坐标在地图范围内
-    SqDot bounded_first = graph.orth_near(fi);
-    SqDot bounded_second = graph.orth_near(se);
+    Intex bounded_first = graph.orth_near(fi);
+    Intex bounded_second = graph.orth_near(se);
     
 
     int min_x = std::min(bounded_first.x, bounded_second.x);

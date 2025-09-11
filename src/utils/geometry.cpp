@@ -11,6 +11,10 @@ double manhattan_distance(const SqDot& a, const SqDot& b) {
     return std::abs(a.x - b.x) + std::abs(a.y - b.y);
 }
 
+double manhattan_distance(const Intex& a, const Intex& b) { 
+    return std::abs(a.x - b.x) + std::abs(a.y - b.y);
+}
+
 /**
  * @brief 计算两点间的欧几里得距离
  * 
@@ -19,6 +23,10 @@ double manhattan_distance(const SqDot& a, const SqDot& b) {
  * @return 欧几里得距离值
  */
 double euclidean_distance(const SqDot& a, const SqDot& b) {
+    return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
+}
+
+double euclidean_distance(const Intex& a, const Intex& b) { 
     return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
@@ -141,7 +149,7 @@ SqDot SqDot::down_rot_round(const double& angle, const SqDot& center) const {
  */
 SqDot SqDot::central_restore(const double& scale) const {
     auto offset = 0.5 / scale;
-    return SqDot(x / scale + offset - 0.5, y / scale + offset - 0.5);
+    return SqDot(x / scale + offset, y / scale + offset);
 }
 
 /**
@@ -314,7 +322,7 @@ SqLine::SqLine(const SqDot& p1, const SqDot& p2): a(p1.y - p2.y), b(p2.x - p1.x)
 SqLine::SqLine(const SqDot& point, double angle): a(sin(angle)),
     b(-cos(angle)), c(cos(angle) * point.y - sin(angle) * point.x) {}
 double SqLine::distance(const SqDot& dot) const { 
-    return fabs(a * dot.x + b * dot.y + c) / sqrt(a * a + b * b);
+    return std::abs(a * dot.x + b * dot.y + c) / sqrt(a * a + b * b);
 }
 
 /**
@@ -351,6 +359,18 @@ bool SqPlain::edge_allowed(const SqDot& point) const {
     return true;
 }
 
+bool SqPlain::edge_allowed(const Intex& point) const { 
+    if (point.x < 0 || point.x >= map.size() || point.y < 0 || point.y >= map[0].size()) {
+        return false;
+    }
+
+    if (map[point.x][point.y] == std::numeric_limits<double>::infinity()) {
+        return false;
+    }
+    
+    return true;
+}
+
 /**
  * @brief 获取指定点的邻居点
  * 
@@ -362,9 +382,37 @@ SqDot SqPlain::get_neighbour(const SqDot& point, int idx) const {
 
     static const std::array<int, 4> dx = {-1, 1, 0, 0};
     static const std::array<int, 4> dy = {0, 0, -1, 1};
-    
 
     return SqDot(point.x + dx[idx], point.y + dy[idx]);
+}
+
+Intex SqPlain::get_neighbour(const Intex& point, int idx) const { 
+    static const std::array<int, 4> dx = {-1, 1, 0, 0};
+    static const std::array<int, 4> dy = {0, 0, -1, 1};
+
+    return Intex(point.x + dx[idx], point.y + dy[idx]);
+}
+
+/**
+ * @brief 获取所有邻居点
+ * 
+ * @param point 原始点
+ * @return 邻居点的向量
+ */
+std::vector<SqDot> SqPlain::get_neighbour(const SqDot& point) const {
+    std::vector<SqDot> neighbours;
+    for (int idx = 0; idx < 4; idx++) {
+        neighbours.emplace_back(get_neighbour(point, idx));
+    }
+    return neighbours;
+}
+
+std::vector<Intex> SqPlain::get_neighbour(const Intex& point) const { 
+    std::vector<Intex> neighbours;
+    for (int idx = 0; idx < 4; idx++) {
+        neighbours.push_back(get_neighbour(point, idx));
+    }
+    return neighbours;
 }
 
 /**
@@ -384,6 +432,17 @@ std::vector<SqDot> SqPlain::get_valid_neighbours(const SqDot& point) const {
     return valid_neighbours;
 }
 
+std::vector<Intex> SqPlain::get_valid_neighbours(const Intex& point) const { 
+    std::vector<Intex> valid_neighbours;
+    for (int idx = 0; idx < 4; idx++) {
+        Intex neighbour = get_neighbour(point, idx);
+        if (edge_allowed(neighbour)) {
+            valid_neighbours.push_back(neighbour);
+        }
+    }
+    return valid_neighbours;
+}
+
 /**
  * @brief 获取地图边界内的点
  * 
@@ -391,8 +450,11 @@ std::vector<SqDot> SqPlain::get_valid_neighbours(const SqDot& point) const {
  * @return 边界内的点
  */
 SqDot SqPlain::orth_near(const SqDot& point) const { 
-
     return SqDot(std::min(point.x_index(), rows() - 1), std::min(point.y_index(), cols() - 1));
+}
+
+Intex SqPlain::orth_near(const Intex& point) const { 
+    return Intex(std::min(point.x_index(), rows() - 1), std::min(point.y_index(), cols() - 1));
 }
 
 /**
@@ -415,20 +477,6 @@ SqDot SqPlain::local_center(SqDot& fi, SqDot& se) const {
     
 
     return SqDot((min_x + max_x) / 2, (min_y + max_y) / 2);
-}
-
-/**
- * @brief 获取所有邻居点
- * 
- * @param point 原始点
- * @return 邻居点的向量
- */
-std::vector<SqDot> SqPlain::get_neighbour(const SqDot& point) const {
-    std::vector<SqDot> neighbours;
-    for (int idx = 0; idx < 4; idx++) {
-        neighbours.emplace_back(get_neighbour(point, idx));
-    }
-    return neighbours;
 }
 
 /**
@@ -747,6 +795,10 @@ double SqPlain::cost(const SqDot& at, const SqDot& to) const {
     return manhattan_distance(at, to) + map[to.x][to.y];
 }
 
+double SqPlain::cost(const Intex& at, const Intex& to) const { 
+    return manhattan_distance(at, to) + map[to.x][to.y];
+}
+
 /**
  * @brief 将缩放地图上的点恢复到原始地图上的点
  * 
@@ -755,6 +807,10 @@ double SqPlain::cost(const SqDot& at, const SqDot& to) const {
  * @return 原始地图上的点
  */
 SqDot SqPlain::restore_dot(SqDot& dot, double scale) const { 
+    return orth_near(dot.central_restore(scale));
+}
+
+Intex SqPlain::restore_dot(Intex& dot, double scale) const { 
     return orth_near(dot.central_restore(scale));
 }
 
@@ -771,6 +827,11 @@ std::pair<SqDot, SqDot> SqPlain::restore(const SqDot& block, double scale) const
     return {fi, se};
 }
 
+std::pair<Intex, Intex> SqPlain::restore(const Intex& block, double scale) const {
+    Intex fi = orth_near(block.scale(scale));
+    Intex se = orth_near(Intex(block.x + 1, block.y + 1).scale(scale));
+    return {fi, se};
+}
 /**
  * @brief 检查两个点是否在同一个缩放区块内
  * 
