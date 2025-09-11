@@ -18,14 +18,12 @@
 
 std::vector<Intex> a_star_search(const SqPlain& graph, const Intex& start, const Intex& goal);
 
-std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const Intex& goal, const double& stride);
+std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const Intex& goal, const double& scale);
 
-std::vector<Intex> central_restore_guide(std::vector<Intex>& guides, double scale, double unit_size);
+// std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const SqDot& goal, const double& scale);
 
-std::vector<Intex> scale_star_on_scaled_map(const SqPlain& graph, Intex start, Intex goal, double stride);
+// 地面采集算法，待完成
+double steep_extend(const SqPlain& graph, const Intex& fi, const Intex& se);
 
-std::vector<Intex> discrete_guide(SqPlain& graph, double stride, Intex start, Intex goal);
-
-double steep_extend(const SqPlain& graph, Intex& fi, Intex& se);
 
 #endif

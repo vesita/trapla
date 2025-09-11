@@ -12,8 +12,8 @@ int Intex::x_index() const { return x; }
 
 int Intex::y_index() const { return y; }
 
-Intex Intex::as_dot() const { 
-    return Intex(x, y);
+SqDot Intex::as_dot() const { 
+    return SqDot(x, y);
 }
 
 /**

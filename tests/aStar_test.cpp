@@ -1,6 +1,10 @@
 #include "utils/test_framework.hpp"
 #include "aStar/aStar.hpp"
 #include "ground/ground.hpp"
+#include <iostream>
+#include <limits>
+#include <vector>
+#include <string>
 
 TEST(a_star_search_test) {
     // 创建一个简单的测试地图
@@ -26,6 +30,8 @@ TEST(a_star_search_test) {
     // 或类似的绕过障碍物的路径
     auto& framework = TestFramework::getInstance();
     const std::string testName = "A*搜索测试";
+
+    framework.info("a_star_search_test: 开始测试A*搜索算法");
 
     // 检查路径的基本属性
     if (path.empty()) {
@@ -83,7 +89,7 @@ TEST(a_star_search_test) {
     // 如果有失败的测试用例，则抛出异常
     framework.throwIfFailed(testName, "测试失败");
 
-    std::cout << "a_star_search_test: 通过所有测试用例" << std::endl;
+    framework.info("a_star_search_test: 通过所有测试用例");
 }
 
 TEST(scale_star_test) {
@@ -104,10 +110,12 @@ TEST(scale_star_test) {
     Intex goal(4, 4);
     double stride = 2.0;
 
-    auto path = scale_star(graph, start, goal, stride);
+    auto path = scale_star(graph, start, goal, 1.0/stride);
 
     auto& framework = TestFramework::getInstance();
     const std::string testName = "Scale*搜索测试";
+
+    framework.info("scale_star_test: 开始测试Scale*搜索算法");
 
     // 检查路径的基本属性
     if (path.empty()) {
@@ -140,7 +148,7 @@ TEST(scale_star_test) {
     // 如果有失败的测试用例，则抛出异常
     framework.throwIfFailed(testName, "测试失败");
 
-    std::cout << "scale_star_test: 通过所有测试用例" << std::endl;
+    framework.info("scale_star_test: 通过所有测试用例");
 }
 
 TEST(edge_cases_test) {
@@ -153,6 +161,8 @@ TEST(edge_cases_test) {
     
     auto& framework = TestFramework::getInstance();
     const std::string testName = "边界情况测试";
+    
+    framework.info("edge_cases_test: 开始测试边界情况");
     
     if (path2.size() != 1 || path2[0] != same_point) {
         framework.addFailure(testName, {2, 1, 1, static_cast<double>(path2.size())}); // 应该只有一个点
@@ -167,7 +177,7 @@ TEST(edge_cases_test) {
     // 如果有失败的测试用例，则抛出异常
     framework.throwIfFailed(testName, "测试失败");
     
-    std::cout << "edge_cases_test: 通过所有测试用例" << std::endl;
+    framework.info("edge_cases_test: 通过所有测试用例");
 }
 
 int main(int argc, char* argv[]) {
@@ -176,9 +186,16 @@ int main(int argc, char* argv[]) {
         if (argc > 1) {
             TestFramework::getInstance().setWorkingDirectory(argv[1]);
         }
-        return TestFramework::getInstance().runTests() ? 0 : 1;
+        
+        TestFramework::getInstance().setLogFile("log/aStar_test.log");
+        TestFramework::getInstance().info("=== A*算法测试 ===");
+        
+        bool result = TestFramework::getInstance().runTests();
+        TestFramework::getInstance().info("=== 测试完成 ===");
+        
+        return result ? 0 : 1;
     } catch (const std::exception& e) {
-        std::cerr << "测试执行出错: " << e.what() << std::endl;
+        TestFramework::getInstance().error("测试执行出错: " + std::string(e.what()));
         return 1;
     }
 }

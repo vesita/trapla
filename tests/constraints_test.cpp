@@ -1,6 +1,8 @@
 #include "utils/test_framework.hpp"
-
 #include "robot/robot.hpp"
+#include <iostream>
+#include <vector>
+#include <tuple>
 
 TEST(spacing_constraint_test) {
     // 测试足部间距约束检查
@@ -27,6 +29,8 @@ TEST(spacing_constraint_test) {
     auto& framework = TestFramework::getInstance();
     const std::string testName = "足部间距约束测试";
     
+    framework.info("spacing_constraint_test: 开始测试足部间距约束");
+    
     for (auto& test_case : test_cases) {
         SqDot pos = std::get<0>(test_case);
         bool expected = std::get<1>(test_case);
@@ -48,14 +52,25 @@ TEST(spacing_constraint_test) {
     // 如果有失败的测试用例，则抛出异常
     framework.throwIfFailed(testName, "测试失败");
     
-    std::cout << "spacing_constraint_test: 通过所有测试用例" << std::endl;
+    framework.info("spacing_constraint_test: 通过所有测试用例");
 }
 
 int main (int argc, char* argv[]) {
     try {
-        return TestFramework::getInstance().runTests() ? 0 : 1;
+        // 设置工作目录
+        if (argc > 1) {
+            TestFramework::getInstance().setWorkingDirectory(argv[1]);
+        }
+        
+        TestFramework::getInstance().setLogFile("log/constraints_test.log");
+        TestFramework::getInstance().info("=== 约束条件测试 ===");
+        
+        bool result = TestFramework::getInstance().runTests();
+        TestFramework::getInstance().info("=== 测试完成 ===");
+        
+        return result ? 0 : 1;
     } catch (const std::exception& e) {
-        std::cerr << "测试执行出错: " << e.what() << std::endl;
+        TestFramework::getInstance().error("测试执行出错: " + std::string(e.what()));
         return 1;
     }
 }
