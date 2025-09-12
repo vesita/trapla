@@ -195,6 +195,16 @@ SqDot SqDot::operator-(const SqDot& other) const {
     return SqDot(x - other.x, y - other.y);
 }
 
+SqDot SqDot::operator*(double times) const { 
+    return SqDot(x * times, y * times);
+}
+
+SqDot SqDot::operator+=(const SqDot& other) {
+    x += other.x;
+    y += other.y;
+    return *this;
+}
+
 /**
  * @brief 计算x坐标在缩放后的索引
  * 
@@ -304,6 +314,10 @@ double SqDot::line_angle(const SqDot& other) const {
     return atan2(other.y - y, other.x - x);
 }
 
+Intex SqDot::as_index() const { 
+    return Intex(x_index(), y_index());
+}
+
 /**
  * @brief 构造函数，使用地图数据创建二维平面
  * 
@@ -323,6 +337,14 @@ SqLine::SqLine(const SqDot& point, double angle): a(sin(angle)),
     b(-cos(angle)), c(cos(angle) * point.y - sin(angle) * point.x) {}
 double SqLine::distance(const SqDot& dot) const { 
     return std::abs(a * dot.x + b * dot.y + c) / sqrt(a * a + b * b);
+}
+
+SqLine SqLine::normal() const { 
+    return SqLine(b, -a, c);
+}
+
+SqLine SqLine::normal(const SqDot& point) const { 
+    return SqLine(point, atan2(a, b));
 }
 
 /**
@@ -741,7 +763,7 @@ int SqPlain::rows() const {
  * @param scale 缩放比例
  * @return 缩放后的行数
  */
-int SqPlain::row_scale(double& scale) const {
+int SqPlain::row_scale(const double& scale) const {
     return index_scale(rows(), scale);
 }
 
@@ -760,7 +782,7 @@ int SqPlain::cols() const {
  * @param scale 缩放比例
  * @return 缩放后的列数
  */
-int SqPlain::col_scale(double& scale) const {
+int SqPlain::col_scale(const double& scale) const {
     return index_scale(cols(), scale);
 }
 

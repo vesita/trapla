@@ -21,7 +21,7 @@ public:
     
     int y_index() const;
 
-    Intex as_dot() const;
+    SqDot as_dot() const;
     
     /**
      * @brief 计算x坐标在缩放后的索引

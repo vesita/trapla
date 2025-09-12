@@ -167,10 +167,14 @@ public:
      */
     bool operator<(const SqDot& other) const;
 
-    SqDot operator+(const SqDot& other) const;
+    SqDot operator+(const SqDot& other) const; 
 
-    SqDot operator-(const SqDot& other) const;
-    
+    SqDot operator-(const SqDot& other) const; 
+
+    SqDot operator*(double times) const; 
+
+    SqDot operator+=(const SqDot& other);
+
     /**
      * @brief 计算x坐标在缩放后的索引
      * 
@@ -258,6 +262,7 @@ public:
      */
     double line_angle(const SqDot& other) const;
 
+    Intex as_index() const;
 };
 
 class SqLine {
@@ -272,6 +277,10 @@ public:
     SqLine(const SqDot& point, double angle);
 
     double distance(const SqDot& dot) const;
+
+    SqLine normal() const;
+
+    SqLine normal(const SqDot& point) const;
 };
 
 /**
@@ -431,7 +440,7 @@ public:
      * @param scale 缩放比例
      * @return 缩放后的行数
      */
-    int row_scale(double& scale) const;
+    int row_scale(const double& scale) const;
 
     
     /**
@@ -448,7 +457,7 @@ public:
      * @param scale 缩放比例
      * @return 缩放后的列数
      */
-    int col_scale(double& scale) const;
+    int col_scale(const double& scale) const;
 
     
     /**
