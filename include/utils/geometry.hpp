@@ -210,6 +210,8 @@ public:
      */
     SqDot center(const SqDot& other);
 
+    SqDot nearest(const SqDot& other, int R);
+
     
     /**
      * @brief 获取指定方向的邻居点

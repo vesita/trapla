@@ -147,6 +147,10 @@ SlideResult FootShape::slide(std::vector<SqDot>& area, Ground& ground) {
     return SlideResult::NoModification;
 }
 
+double FootShape::about_R() { 
+    return (length + width) / 4.0;
+}
+
 /**
  * @brief 默认构造函数，创建一个位于原点的足部对象
  */
@@ -207,7 +211,6 @@ std::vector<SqDot> Foot::cover() const {
         }
     }
     
-
     return std::vector<SqDot>(point_set.begin(), point_set.end());
 }
 
@@ -232,6 +235,10 @@ std::vector<SqDot> Foot::corner() const {
     return points;
 }
 
+bool Foot::standable(const Ground& ground) {
+    return ground.convex(cover()).normal_angle() < 20/180 * M_PI;
+}
+
 /**
  * @brief 让足部走向指定位置
  * 
@@ -253,4 +260,8 @@ bool Foot::walkto(Ground& ground) {
     }
 
     return true;
+}
+
+double Foot::about_R() { 
+    return shape.about_R();
 }

@@ -33,7 +33,7 @@ Ground::Ground(int rows, int cols) : map(rows, cols, 0.0) {
  * @param area 区域内的点集合
  * @return 站立角度（弧度）
  */
-double Ground::stand_angle(std::vector<SqDot>& area) {
+double Ground::stand_angle(std::vector<SqDot> area) const {
     CuPlain plaine = trip(area);
     return plaine.normal_angle();
 }
@@ -58,7 +58,7 @@ std::array<int, 2> Ground::shape() const {
  * @param area 区域内的点集合
  * @return 拟合得到的三维平面
  */
-CuPlain Ground::trip(std::vector<SqDot>& area) { 
+CuPlain Ground::trip(std::vector<SqDot> area) const { 
     std::vector<CuDot> dots;
     for (const auto& point : area) {
         if (point.x < 0 || point.x >= map.rows() || point.y < 0 || point.y >= map.cols()) {
@@ -206,20 +206,116 @@ CuPlain Ground::trip(std::vector<SqDot>& area) {
  * @param area 区域内的点集合
  * @return 区域的法向量
  */
-CuDot Ground::normal(std::vector<SqDot>& area) {
+CuDot Ground::normal(std::vector<SqDot> area) const {
     CuPlain plaine = trip(area);
     return plaine.normal_vector();
 }
 
 /**
- * @brief 使用凸包算法拟合三维平面（未实现）
+ * @brief 使用凸包算法计算指定区域的接触平面
+ * 
+ * 该函数通过计算区域点的凸包，然后使用凸包上的点来拟合三维平面
  * 
  * @param area 区域内的点集合
- * @return 三维平面对象
+ * @return 拟合得到的三维平面
  */
-CuPlain Ground::convex_trip(std::vector<SqDot>& area) { 
+CuPlain Ground::convex(std::vector<SqDot> area) const {
+    // 如果区域点数少于3个，无法构成平面
+    if (area.size() < 3) {
+        return CuPlain();
+    }
 
-    return CuPlain();
+    // 使用 Graham Scan 算法计算凸包
+    // 1. 找到最下方的点（y最小，相同时x最小）
+    size_t lowest_index = 0;
+    for (size_t i = 1; i < area.size(); i++) {
+        if (area[i].y < area[lowest_index].y || 
+            (area[i].y == area[lowest_index].y && area[i].x < area[lowest_index].x)) {
+            lowest_index = i;
+        }
+    }
+
+    // 将最低点放到第一个位置
+    if (lowest_index != 0) {
+        std::swap(area[0], area[lowest_index]);
+    }
+
+    // 2. 根据相对于最低点的极角对其他点进行排序
+    SqDot pivot = area[0];
+    std::sort(area.begin() + 1, area.end(), [pivot](const SqDot& a, const SqDot& b) {
+        // 计算向量与x轴的夹角
+        double angle_a = atan2(a.y - pivot.y, a.x - pivot.x);
+        double angle_b = atan2(b.y - pivot.y, b.x - pivot.x);
+        
+        // 如果角度相同，按距离排序
+        if (std::abs(angle_a - angle_b) < 1e-9) {
+            double dist_a = (a.x - pivot.x) * (a.x - pivot.x) + (a.y - pivot.y) * (a.y - pivot.y);
+            double dist_b = (b.x - pivot.x) * (b.x - pivot.x) + (b.y - pivot.y) * (b.y - pivot.y);
+            return dist_a < dist_b;
+        }
+        return angle_a < angle_b;
+    });
+
+    // 3. 构建凸包
+    std::vector<SqDot> convex_hull;
+    for (const auto& point : area) {
+        // 删除导致不是左转的点
+        while (convex_hull.size() > 1) {
+            SqDot& a = convex_hull[convex_hull.size() - 2];
+            SqDot& b = convex_hull[convex_hull.size() - 1];
+            
+            // 计算向量叉积判断转向
+            double cross_product = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+            
+            // 如果是右转或共线，移除最后一个点
+            if (cross_product <= 0) {
+                convex_hull.pop_back();
+            } else {
+                break;
+            }
+        }
+        convex_hull.push_back(point);
+    }
+
+    // 4. 如果凸包点数少于3个，无法构成平面
+    if (convex_hull.size() < 3) {
+        return CuPlain();
+    }
+
+    // 5. 从凸包中选择合适的点来拟合平面
+    // 选择凸包上距离最远的三个点
+    double max_distance = -1;
+    std::array<SqDot, 3> selected_points;
+    
+    for (size_t i = 0; i < convex_hull.size(); i++) {
+        for (size_t j = i + 1; j < convex_hull.size(); j++) {
+            for (size_t k = j + 1; k < convex_hull.size(); k++) {
+                double dist_ij = convex_hull[i].distance(convex_hull[j]);
+                double dist_ik = convex_hull[i].distance(convex_hull[k]);
+                double dist_jk = convex_hull[j].distance(convex_hull[k]);
+                double total_dist = dist_ij + dist_ik + dist_jk;
+                
+                if (total_dist > max_distance) {
+                    max_distance = total_dist;
+                    selected_points = {convex_hull[i], convex_hull[j], convex_hull[k]};
+                }
+            }
+        }
+    }
+
+    // 6. 将二维点转换为三维点并拟合平面
+    std::array<CuDot, 3> cu_points;
+    for (int i = 0; i < 3; i++) {
+        const SqDot& sq_point = selected_points[i];
+        if (sq_point.x < 0 || sq_point.x >= map.rows() || sq_point.y < 0 || sq_point.y >= map.cols()) {
+            return CuPlain();
+        }
+        cu_points[i] = CuDot{sq_point.x, sq_point.y, map[sq_point.x_index()][sq_point.y_index()]};
+    }
+
+    CuPlain plane;
+    plane.define_plaine(cu_points);
+    return plane;
 }
 
 /**

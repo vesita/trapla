@@ -245,6 +245,11 @@ SqDot SqDot::center(const SqDot& other) {
     return SqDot((x + other.x) / 2.0, (y + other.y) / 2.0);
 }
 
+SqDot SqDot::nearest(const SqDot& other, int R) { 
+    auto extend = R/distance(other);
+    return SqDot(x + (other.x - x) * extend, y + (other.y - y) * extend);
+}
+
 /**
  * @brief 获取指定方向的邻居点
  * 

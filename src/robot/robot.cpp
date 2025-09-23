@@ -210,6 +210,10 @@ bool Robot::satisfy_turn(const SqDot& new_pos) {
     return angle < max_turn && angle > - max_turn;
 }
 
+bool Robot::position_check(const SqDot& new_pos) {
+    return satisfy_spacing(new_pos) && satisfy_stride(new_pos) && satisfy_turn(new_pos);
+}
+
 /**
  * @brief 滑动调整足部落足区域
  * 
@@ -230,20 +234,20 @@ SlideResult Robot::slide(std::vector<SqDot>& area, Ground& ground) {
  * @param goal 引导点
  * @return 目标落足点
  */
-SqDot Robot::walk_with_guide(const Ground& ground, const SqDot& goal) { 
-    // TODO
+SqDot Robot::walk_with_guide(const Ground& ground, const SqDot& guide_point) { 
+    auto target = get_target(ground, guide_point);
+    return bfs(ground, target);
 }
 
-/**
- * @brief 调整目标点以适应地形约束
- * 
- * @param ground 地形对象
- * @param goal 原始目标点
- * @return 调整后的目标点
- */
-SqDot Robot::fit_target(const Ground& ground, const SqDot& goal) { 
-    // TODO
+SqDot Robot::get_target(const Ground& ground, const SqDot& guide_point) {
+    auto result = direct_target(guide_point);
+    auto sw = get_swing_foot();
+    if (result.distance(sw.position) < 0.3 * sw.about_R()) {
+        return little_step();
+    }
+    return result;
 }
+
 
 /**
  * @brief 计算直接目标点
@@ -254,35 +258,40 @@ SqDot Robot::fit_target(const Ground& ground, const SqDot& goal) {
  * @param goal 最终目标点
  * @return 直接目标点
  */
-SqDot Robot::direct_target(const Ground& ground, const SqDot& goal) { 
+SqDot Robot::direct_target(const SqDot& guide_point) { 
 
     auto& support_foot = get_support_foot();
-    
+    auto& sw = get_swing_foot();
 
-    double dx = goal.x - support_foot.position.x;
-    double dy = goal.y - support_foot.position.y;
+    double dx = guide_point.x - sw.position.x;
+    double dy = guide_point.y - sw.position.y;
     double distance = sqrt(dx * dx + dy * dy);
     
-    SqDot target_point;
-    
-
-    if (distance <= max_stride) {
-        target_point = goal;
-    } else {
-
-        double dir_x = dx / distance;
-        double dir_y = dy / distance;
-        
-
-        double target_x = support_foot.position.x + max_stride * dir_x;
-        double target_y = support_foot.position.y + max_stride * dir_y;
-        
-
-        target_point = SqDot(round(target_x), round(target_y));
+    // 如果目标点本身满足约束条件，直接返回
+    if (position_check(guide_point)) {
+        return guide_point;
     }
     
+    // 在从当前位置到目标点的连线上搜索满足约束条件的最近点
+    const double step_size = 0.1; // 搜索步长
+    for (double ratio = step_size; ratio < 1.0; ratio += step_size) {
+        SqDot test_point(sw.position.x + dx * ratio, 
+                         sw.position.y + dy * ratio);
+        
+        if (position_check(test_point)) {
+            return test_point;
+        }
+    }
+    
+    // 如果连线上没有满足约束的点，则返回当前位置
+    return sw.position;
+}
 
-    return fit_target(ground, target_point);
+SqDot Robot::little_step() {
+    auto& sw = get_swing_foot();
+    auto dist = max_stride * cos(sw.rz) * 0.5;
+    auto disn = max_stride * sin(sw.rz) * 0.5;
+    return SqDot(sw.position.x + dist, sw.position.y + disn);
 }
 
 /**
@@ -294,4 +303,43 @@ SqDot Robot::direct_target(const Ground& ground, const SqDot& goal) {
  */
 std::vector<SqDot> Robot::find_path(const Ground& ground, const SqDot& goal) {
     // TODO
+}
+
+std::vector<SqDot> Robot::rot_neighbour(const SqDot& dot, double rot, double R) { 
+    auto dist = R * cos(rot);
+    auto disn = R * sin(rot);
+    return std::vector<SqDot> {SqDot{dot.x + dist, dot.y + disn}, SqDot{dot.x - dist, dot.y - disn},
+    SqDot{dot.x + disn, dot.y - dist}, SqDot{dot.x - disn, dot.y + dist}};
+}
+
+SqDot Robot::bfs(const Ground& ground, const SqDot& target) { 
+    auto sw = get_swing_foot();
+    // 检查目标点是否在地图范围内
+    if (!ground.is_valid(target)) {
+        return sw.position; // 返回当前摆动脚位置
+    }    
+    std::queue<SqDot> pends;
+    std::unordered_set<SqDot, SqDotHash> visited;
+    pends.push(target);
+    while (!pends.empty()) { 
+        auto now = pends.front();
+        pends.pop();
+        if (visited.count(now)) continue;
+        visited.insert(now);
+        
+        // 检查当前点是否在地图范围内
+        if (!ground.is_valid(now)) continue;
+        
+        auto new_pos = sw.next(now);        
+        if (!position_check(now)) continue;
+        if (sw.standable(ground)) return new_pos.position;
+        
+        // 在添加邻居点到队列前检查它们是否在地图范围内
+        for (auto& point : rot_neighbour(now, sw.rz, sw.about_R())) { 
+            if (ground.is_valid(point)) {
+                pends.push(point);
+            }
+        }
+    }
+    return sw.position;
 }
