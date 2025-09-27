@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
+#include "utils/io.hpp"
 
 class CSVReader { 
 public:

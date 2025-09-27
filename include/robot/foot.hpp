@@ -60,6 +60,7 @@ public:
      * @return 滑动调整结果
      */
     SlideResult slide(std::vector<SqDot>& area, Ground& ground);
+    double about_R();
 };
 
 /**
@@ -126,13 +127,9 @@ public:
 
     std::vector<SqDot> corner() const;
 
-    /**
-     * @brief 让足部走向指定位置
-     * 
-     * @param ground 地形对象
-     * @return 如果成功走向指定位置返回true，否则返回false
-     */
-    bool walkto(Ground& ground);
+    bool standable(const Ground& ground);
+
+    double about_R();
 };
 
 #endif

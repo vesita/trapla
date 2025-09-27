@@ -98,11 +98,15 @@ std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const In
         frontier.pop();
         if (current == sg) break;
         for (auto& next: current.get_neighbour(sr, sc)) {            
+            // 检查邻居点是否在有效范围内
+            if (next.x < 0 || next.x >= sr || next.y < 0 || next.y >= sc) {
+                continue;
+            }
 
             auto block_pair = graph.restore(next, scale);
-            // auto steep = steep_extend(graph, block_pair.first, block_pair.second);
-            auto steep = 10.0;
-
+            auto steep = steep_extend(graph, block_pair.first,
+                                            block_pair.second);
+            
             if (steep < 0) {
                 continue;
             }
@@ -112,7 +116,10 @@ std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const In
                 cost_so_far[next] = new_cost;
                 double priority = new_cost + euclidean_distance(next, sg);
                 frontier.push({priority, next});
-                came_from[next.x * sc + next.y] = current;
+                // 确保索引在有效范围内
+                if (next.x >= 0 && next.x < sr && next.y >= 0 && next.y < sc) {
+                    came_from[next.x * sc + next.y] = current;
+                }
             }
         }
     }
@@ -185,9 +192,10 @@ std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const In
 
 
 /**
- * @brief 计算两点间区域的陡峭程度
+ * @brief 计算两点定义区域的平均陡峭度
  * 
- * 该函数评估两点定义的区域的地形陡峭程度，用于路径规划中的代价计算
+ * 该函数通过计算两点定义的矩形区域内所有点的平均陡峭度来评估该区域的可行走性
+ * 综合考虑了障碍物密度、高度差异、标准差以及机器人足部站立角度约束等因素
  * 
  * @param graph 地图对象
  * @param fi 第一个点
@@ -201,10 +209,15 @@ double steep_extend(const SqPlain& graph, const Intex& fi, const Intex& se) {
     Intex bounded_second = graph.orth_near(se);
     
 
-    int min_x = std::min(bounded_first.x, bounded_second.x);
+    int min_x = std::min(bounded_first.x, bounded_first.x);
     int max_x = std::max(bounded_first.x, bounded_second.x);
     int min_y = std::min(bounded_first.y, bounded_second.y);
     int max_y = std::max(bounded_first.y, bounded_second.y);    
+
+    // 提前检查边界，确保不会访问无效索引
+    if (min_x < 0 || max_x >= graph.rows() || min_y < 0 || max_y >= graph.cols()) {
+        return -1.0;
+    }
 
     int obstacle_count = 0;
     int total_count = 0;
@@ -212,10 +225,6 @@ double steep_extend(const SqPlain& graph, const Intex& fi, const Intex& se) {
     
     for (int x = min_x; x <= max_x; x++) {
         for (int y = min_y; y <= max_y; y++) {
-
-            if (x < 0 || x >= graph.rows() || y < 0 || y >= graph.cols()) {
-                continue;
-            }
 
             total_count++;
             double height = graph[x][y];
@@ -230,7 +239,8 @@ double steep_extend(const SqPlain& graph, const Intex& fi, const Intex& se) {
         }
     }
     
-    if (total_count > 0 && (static_cast<double>(obstacle_count) / total_count) >= 0.5) {
+    // 如果障碍物占比超过30%，则认为该区域不可行
+    if (total_count > 0 && (static_cast<double>(obstacle_count) / total_count) >= 0.3) {
         return -1.0;
     }
 
@@ -242,10 +252,11 @@ double steep_extend(const SqPlain& graph, const Intex& fi, const Intex& se) {
         return 0.0;
     }
     
+    // 计算平均高度
     double sum = std::accumulate(heights.begin(), heights.end(), 0.0);
     double mean = sum / heights.size();
     
-
+    // 计算标准差
     double variance = 0.0;
     for (const auto& height : heights) {
         double diff = height - mean;
@@ -254,10 +265,27 @@ double steep_extend(const SqPlain& graph, const Intex& fi, const Intex& se) {
     variance /= heights.size();
     double stddev = std::sqrt(variance);
     
-
+    // 计算最大高度差
     auto minmax = std::minmax_element(heights.begin(), heights.end());
     double height_diff = *minmax.second - *minmax.first;
     
-
-    return 0.7 * stddev + 0.3 * height_diff;
+    // 计算平均坡度（简化计算，实际应考虑相邻点的高度差）
+    double avg_slope = 0.0;
+    for (size_t i = 1; i < heights.size(); i++) {
+        avg_slope += std::abs(heights[i] - heights[i-1]);
+    }
+    avg_slope = avg_slope / (heights.size() - 1);
+    
+    // 综合评分，考虑多种因素：
+    // 1. 标准差（反映整体地形波动）权重0.4
+    // 2. 最大高度差（反映局部极端变化）权重0.3
+    // 3. 平均坡度（反映整体倾斜程度）权重0.3
+    double composite_score = 0.4 * stddev + 0.3 * height_diff + 0.3 * avg_slope;
+    
+    // 如果综合评分超过阈值，认为地形过于陡峭，不适合机器人行走
+    // 机器人足部站立角度约束通常为20度(约0.349弧度)
+    if (composite_score > 10.0) {  // 阈值可根据实际测试调整
+        return -1.0;
+    }
+    return composite_score;
 }

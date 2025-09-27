@@ -245,6 +245,11 @@ SqDot SqDot::center(const SqDot& other) {
     return SqDot((x + other.x) / 2.0, (y + other.y) / 2.0);
 }
 
+SqDot SqDot::nearest(const SqDot& other, int R) { 
+    auto extend = R/distance(other);
+    return SqDot(x + (other.x - x) * extend, y + (other.y - y) * extend);
+}
+
 /**
  * @brief 获取指定方向的邻居点
  * 
@@ -472,11 +477,15 @@ std::vector<Intex> SqPlain::get_valid_neighbours(const Intex& point) const {
  * @return 边界内的点
  */
 SqDot SqPlain::orth_near(const SqDot& point) const { 
-    return SqDot(std::min(point.x_index(), rows() - 1), std::min(point.y_index(), cols() - 1));
+    int x = std::max(0, std::min(point.x_index(), rows() - 1));
+    int y = std::max(0, std::min(point.y_index(), cols() - 1));
+    return SqDot(x, y);
 }
 
 Intex SqPlain::orth_near(const Intex& point) const { 
-    return Intex(std::min(point.x_index(), rows() - 1), std::min(point.y_index(), cols() - 1));
+    int x = std::max(0, std::min(point.x, rows() - 1));
+    int y = std::max(0, std::min(point.y, cols() - 1));
+    return Intex(x, y);
 }
 
 /**

@@ -21,21 +21,16 @@ public:
 
     SqPlain map;
     
-    CuPlain trip(std::vector<SqDot>& area);
+    CuPlain trip(std::vector<SqDot> area) const;
     
-    
-    CuDot normal(std::vector<SqDot>& area);
-    
-    
-    CuPlain convex_trip(std::vector<SqDot>& area);
-    
-    
-    double stand_angle(std::vector<SqDot>& area);
+    CuPlain convex(std::vector<SqDot> area) const;
 
+    CuDot normal(std::vector<SqDot> area) const;
     
+    double stand_angle(std::vector<SqDot> area) const;
+
     std::array<int, 2> shape() const;
 
-    
     bool empty() const;
 
     bool is_valid(const SqDot& point) const;
@@ -49,6 +44,7 @@ public:
     int rows() const;
 
     int cols() const;
+
 };
 
 #endif

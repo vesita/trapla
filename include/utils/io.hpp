@@ -7,6 +7,12 @@
 #include <fstream>
 #include <iostream>
 
+#ifdef _WIN32
+#include <windows.h>
+// 解决Windows.h中ERROR宏与测试框架中LogLevel::ERROR枚举值的冲突
+#undef ERROR
+#endif
+
 class IOManager {
 public:
     static IOManager& get_instance() {
@@ -26,10 +32,37 @@ public:
     
 
     std::string build_path(const std::string& relativePath) const {
-        if (workingDirectory.empty()) {
-            return relativePath;
+        // 首先检查是否设置了工作目录
+        if (!workingDirectory.empty()) {
+            std::filesystem::path workPath(workingDirectory);
+            std::filesystem::path fullPath = workPath / relativePath;
+            if (std::filesystem::exists(fullPath)) {
+                return fullPath.string();
+            }
         }
-        return workingDirectory + "/" + relativePath;
+        
+        // 检查相对于可执行文件的路径 (安装后结构)
+        std::filesystem::path exePath;
+        #ifdef _WIN32
+        char buffer[MAX_PATH];
+        GetModuleFileNameA(NULL, buffer, MAX_PATH);
+        exePath = std::filesystem::path(buffer);
+        #else
+        exePath = std::filesystem::canonical("/proc/self/exe");
+        #endif
+        std::filesystem::path installDataPath = exePath.parent_path().parent_path() / "data" / relativePath;
+        if (std::filesystem::exists(installDataPath)) {
+            return installDataPath.string();
+        }
+        
+        // 检查开发环境中的相对路径
+        std::filesystem::path devDataPath = std::filesystem::path("data") / relativePath;
+        if (std::filesystem::exists(devDataPath)) {
+            return devDataPath.string();
+        }
+        
+        // 如果所有路径都不存在，返回原始相对路径
+        return relativePath;
     }
     
 
@@ -61,6 +94,7 @@ public:
         
         auto file = std::make_unique<std::ifstream>(fullPath);
         if (!file->is_open()) {
+            std::cerr << "无法打开文件: " << fullPath << std::endl;
             return nullptr;
         }
         

@@ -21,6 +21,8 @@ add_executable(direction_test tests/direction_test.cpp
                     ${SOURCE})
 add_executable(sequence_test tests/sequence_test.cpp
                     ${SOURCE})
+add_executable(walk_test tests/walk_test.cpp
+                    ${SOURCE})
 
 # 设置包含目录
 target_include_directories(trapla PRIVATE include)
@@ -29,6 +31,7 @@ target_include_directories(constraints_test PRIVATE include)
 target_include_directories(aStar_test PRIVATE include)
 target_include_directories(direction_test PRIVATE include)
 target_include_directories(sequence_test PRIVATE include)
+target_include_directories(walk_test PRIVATE include)
 
 # 链接数学库（在某些系统上需要）
 if(WIN32)
@@ -54,3 +57,17 @@ set_target_properties(constraints_test PROPERTIES CXX_STANDARD 17)
 set_target_properties(aStar_test PROPERTIES CXX_STANDARD 17)
 set_target_properties(direction_test PROPERTIES CXX_STANDARD 17)
 set_target_properties(sequence_test PROPERTIES CXX_STANDARD 17)
+
+# 安装规则
+# 安装可执行文件
+install(TARGETS trapla
+        RUNTIME DESTINATION trapla/bin)
+
+# 安装头文件
+install(DIRECTORY include/
+        DESTINATION trapla/include
+        FILES_MATCHING PATTERN "*.hpp")
+
+# 安装数据文件
+install(DIRECTORY data/
+        DESTINATION trapla/data)

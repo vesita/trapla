@@ -33,7 +33,7 @@ Ground::Ground(int rows, int cols) : map(rows, cols, 0.0) {
  * @param area 区域内的点集合
  * @return 站立角度（弧度）
  */
-double Ground::stand_angle(std::vector<SqDot>& area) {
+double Ground::stand_angle(std::vector<SqDot> area) const {
     CuPlain plaine = trip(area);
     return plaine.normal_angle();
 }
@@ -58,7 +58,7 @@ std::array<int, 2> Ground::shape() const {
  * @param area 区域内的点集合
  * @return 拟合得到的三维平面
  */
-CuPlain Ground::trip(std::vector<SqDot>& area) { 
+CuPlain Ground::trip(std::vector<SqDot> area) const { 
     std::vector<CuDot> dots;
     for (const auto& point : area) {
         if (point.x < 0 || point.x >= map.rows() || point.y < 0 || point.y >= map.cols()) {
@@ -206,20 +206,171 @@ CuPlain Ground::trip(std::vector<SqDot>& area) {
  * @param area 区域内的点集合
  * @return 区域的法向量
  */
-CuDot Ground::normal(std::vector<SqDot>& area) {
+CuDot Ground::normal(std::vector<SqDot> area) const {
     CuPlain plaine = trip(area);
     return plaine.normal_vector();
 }
 
 /**
- * @brief 使用凸包算法拟合三维平面（未实现）
+ * @brief 使用凸包算法计算指定区域的接触平面
+ * 
+ * 该函数通过计算区域点的凸包，然后使用凸包上的点来拟合三维平面
  * 
  * @param area 区域内的点集合
- * @return 三维平面对象
+ * @return 拟合得到的三维平面
  */
-CuPlain Ground::convex_trip(std::vector<SqDot>& area) { 
+CuPlain Ground::convex(std::vector<SqDot> area) const {
+    // 1. 收集区域内所有有效点的三维坐标
+    std::vector<CuDot> dots;
+    for (const auto& point : area) {
+        if (!is_valid(point)) {
+            return CuPlain();
+        }
+        dots.emplace_back(CuDot{static_cast<double>(point.x), static_cast<double>(point.y), map[point.x][point.y]});
+    }
+    
+    // 2. 如果点数少于3，无法定义平面
+    if (dots.size() < 3) {
+        return CuPlain();
+    }
 
-    return CuPlain();
+    // 3. 使用Andrew's Monotone Chain算法计算凸包
+    // 首先按照x坐标排序，如果x相同则按照y坐标排序
+    std::sort(dots.begin(), dots.end(), [](const CuDot& a, const CuDot& b) {
+        if (a.x != b.x) return a.x < b.x;
+        return a.y < b.y;
+    });
+
+    // 构建下凸包
+    std::vector<CuDot> lower_hull;
+    for (const auto& dot : dots) {
+        // 保持向量的叉积非负（逆时针方向）
+        while (lower_hull.size() >= 2) {
+            CuDot& a = lower_hull[lower_hull.size() - 2];
+            CuDot& b = lower_hull[lower_hull.size() - 1];
+            // 计算向量ab和bc的叉积
+            double cross_product = (b.x - a.x) * (dot.y - a.y) - (dot.x - a.x) * (b.y - a.y);
+            // 如果是顺时针转向，则移除b点
+            if (cross_product < 0) {
+                lower_hull.pop_back();
+            } else {
+                break;
+            }
+        }
+        lower_hull.push_back(dot);
+    }
+
+    // 构建上凸包
+    std::vector<CuDot> upper_hull;
+    for (int i = static_cast<int>(dots.size()) - 1; i >= 0; i--) {
+        const auto& dot = dots[i];
+        // 保持向量的叉积非负（逆时针方向）
+        while (upper_hull.size() >= 2) {
+            CuDot& a = upper_hull[upper_hull.size() - 2];
+            CuDot& b = upper_hull[upper_hull.size() - 1];
+            // 计算向量ab和bc的叉积
+            double cross_product = (b.x - a.x) * (dot.y - a.y) - (dot.x - a.x) * (b.y - a.y);
+            // 如果是顺时针转向，则移除b点
+            if (cross_product < 0) {
+                upper_hull.pop_back();
+            } else {
+                break;
+            }
+        }
+        upper_hull.push_back(dot);
+    }
+
+    // 合并上下凸包，去除重复点
+    lower_hull.pop_back();
+    upper_hull.pop_back();
+    std::vector<CuDot> hull;
+    hull.reserve(lower_hull.size() + upper_hull.size());
+    hull.insert(hull.end(), lower_hull.begin(), lower_hull.end());
+    hull.insert(hull.end(), upper_hull.begin(), upper_hull.end());
+
+    // 4. 如果凸包点数少于3，无法定义平面
+    if (hull.size() < 3) {
+        return CuPlain();
+    }
+
+    // 5. 使用凸包中的前三个点初始化平面
+    std::array<CuDot, 3> initial_points = {hull[0], hull[1], hull[2]};
+    CuPlain plane;
+    plane.define_plaine(initial_points);
+
+    // 如果只有3个点，直接返回
+    if (hull.size() == 3) {
+        return plane;
+    }
+
+    // 6. 迭代优化平面，尝试用剩余的凸包点替换当前平面点以获得更好的拟合
+    bool changed = true;
+    const int max_iterations = 100;
+    int iterations = 0;
+    
+    while (changed && iterations < max_iterations) {
+        changed = false;
+        iterations++;
+        
+        // 寻找距离当前平面最远的点
+        double max_distance = 0;
+        int best_point_idx = -1;
+        
+        for (size_t i = 0; i < hull.size(); i++) {
+            double distance = plane.distance(hull[i]);
+            if (distance > max_distance) {
+                max_distance = distance;
+                best_point_idx = static_cast<int>(i);
+            }
+        }
+        
+        // 如果找到了足够远的点，则尝试用它来改进平面
+        if (best_point_idx >= 0 && max_distance > 1e-6) {
+            double best_improvement = 0;
+            int best_replace_idx = -1;
+            
+            // 尝试用该点替换当前平面的每个点
+            for (int i = 0; i < 3; i++) {
+                // 创建临时平面
+                std::array<CuDot, 3> temp_points = {
+                    (i == 0) ? hull[best_point_idx] : initial_points[0],
+                    (i == 1) ? hull[best_point_idx] : initial_points[1],
+                    (i == 2) ? hull[best_point_idx] : initial_points[2]
+                };
+
+                CuPlain temp_plane;
+                if (temp_plane.define_plaine(temp_points)) {
+                    // 计算原始平面和临时平面的总误差
+                    double original_error = 0;
+                    double new_error = 0;
+
+                    for (const auto& dot : hull) {
+                        original_error += plane.distance(dot);
+                        new_error += temp_plane.distance(dot);
+                    }
+                    
+                    // 计算改进值
+                    double improvement = original_error - new_error;
+                    if (improvement > best_improvement) {
+                        best_improvement = improvement;
+                        best_replace_idx = i;
+                    }
+                }
+            }
+
+            // 如果找到改进的替换方案，则更新平面
+            if (best_replace_idx >= 0) {
+                initial_points[best_replace_idx] = hull[best_point_idx];
+                plane.define_plaine(initial_points);
+                changed = true;
+            }
+        } else {
+            // 没有找到足够远的点，停止迭代
+            break;
+        }
+    }
+    
+    return plane;
 }
 
 /**

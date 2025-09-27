@@ -81,6 +81,8 @@ public:
      */
     void walk_update();
 
+    void walk_update(const SqDot& new_pos);
+
     /**
      * @brief 获取摆动脚的x坐标引用
      * 
@@ -178,7 +180,11 @@ public:
      * @return 如果满足限制条件返回true，否则返回false
      */
     bool satisfy_turn(const SqDot& new_pos);
+
+    bool position_check(const SqDot& new_pos);
     
+    SqDot position();
+
     /**
      * @brief 滑动调整足部落足区域
      * 
@@ -198,18 +204,9 @@ public:
      * @param goal 引导点
      * @return 目标落足点
      */
-    SqDot walk_with_guide(const Ground& ground, const SqDot& goal);
+    SqDot walk_with_guide(const Ground& ground, const SqDot& guide_point);
 
-    
-    /**
-     * @brief 调整目标点以适应地形约束
-     * 
-     * @param ground 地形对象
-     * @param goal 原始目标点
-     * @return 调整后的目标点
-     */
-    SqDot fit_target(const Ground& ground, const SqDot& goal);
-
+    SqDot get_target(const Ground& ground, const SqDot& guide_point);
     
     /**
      * @brief 计算直接目标点
@@ -220,8 +217,9 @@ public:
      * @param goal 最终目标点
      * @return 直接目标点
      */
-    SqDot direct_target(const Ground& ground, const SqDot& goal);
+    SqDot direct_target(const SqDot& guide_point);
 
+    SqDot little_step();
     
     /**
      * @brief 查找从当前位置到目标点的路径
@@ -231,6 +229,10 @@ public:
      * @return 路径点序列
      */
     std::vector<SqDot> find_path(const Ground& ground, const SqDot& goal);
+
+    std::vector<SqDot> rot_neighbour(const SqDot& dot, double rot, double R);
+
+    SqDot bfs(const Ground& ground, const SqDot& target);
 };
 
 #endif

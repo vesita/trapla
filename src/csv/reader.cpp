@@ -19,23 +19,13 @@ CSVReader::~CSVReader() {
  * @return 如果读取成功返回true，否则返回false
  */
 bool CSVReader::readFromFile(const std::string& filename) {
+    // 使用IOManager构建正确的文件路径
+    std::string fullPath = buildPath(filename);
+    std::cout << "尝试读取文件: " << fullPath << std::endl;
 
-    std::filesystem::path filePath(filename);
-    
-
-    if (filePath.is_relative()) {
-        filePath = std::filesystem::absolute(filePath);
-    }
-    std::cout << "尝试读取文件: " << filePath.string() << std::endl;
-
-    if (!std::filesystem::exists(filePath)) {
-        std::cerr << "错误: 文件不存在 " << filename << std::endl;
-        return false;
-    }
-    
-    std::ifstream file(filePath.string());
+    std::ifstream file(fullPath);
     if (!file.is_open()) {
-        std::cerr << "错误: 无法打开文件 " << filePath.string() << std::endl;
+        std::cerr << "错误: 无法打开文件 " << fullPath << std::endl;
         return false;
     }
     
@@ -43,25 +33,21 @@ bool CSVReader::readFromFile(const std::string& filename) {
     std::string line;
     rows = 0;
     
-
     while (std::getline(file, line)) {
         std::vector<double> row;
         std::stringstream lineStream(line);
         std::string cell;
         size_t colCount = 0;
         
-
         while (std::getline(lineStream, cell, ',')) {
-            int value = std::stoi(cell);
+            double value = std::stod(cell);
             row.push_back(value);
             colCount++;
         }
         
-
         if (rows == 0) {
             cols = colCount;
         }
-
         else if (colCount != cols) {
             std::cerr   << "警告: 第 " << rows << " 行有 " << colCount 
                         << " 列，但预期为 " << cols << " 列" << std::endl;

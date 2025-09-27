@@ -47,20 +47,16 @@ bool CSVWriter::writeToFile(const std::string& filename, const std::vector<std::
  */
 bool CSVWriter::writeToFile(const std::string& filename, const std::vector<std::vector<double>>& data,
                             const std::vector<std::string>& columnNames, bool includeHeader) {
-    std::filesystem::path filePath(filename);
-    
-    if (filePath.is_relative()) {
-        filePath = std::filesystem::absolute(filePath);
-    }
-    
-    std::cout << "尝试写入文件: " << filePath.string() << std::endl;
+    // 使用IOManager构建正确的文件路径
+    std::string fullPath = buildPath(filename);
+    std::cout << "尝试写入文件: " << fullPath << std::endl;
     
     // 确保目录存在
-    std::filesystem::create_directories(filePath.parent_path());
+    IOManager::get_instance().createDirectories(fullPath);
     
-    std::ofstream file(filePath.string());
+    std::ofstream file(fullPath);
     if (!file.is_open()) {
-        std::cerr << "错误: 无法创建文件 " << filePath.string() << std::endl;
+        std::cerr << "错误: 无法创建文件 " << fullPath << std::endl;
         return false;
     }
     
