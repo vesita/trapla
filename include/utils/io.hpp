@@ -32,36 +32,14 @@ public:
     
 
     std::string build_path(const std::string& relativePath) const {
-        // 首先检查是否设置了工作目录
+        // 如果设置了工作目录，则使用工作目录
         if (!workingDirectory.empty()) {
             std::filesystem::path workPath(workingDirectory);
             std::filesystem::path fullPath = workPath / relativePath;
-            if (std::filesystem::exists(fullPath)) {
-                return fullPath.string();
-            }
+            return fullPath.string();
         }
         
-        // 检查相对于可执行文件的路径 (安装后结构)
-        std::filesystem::path exePath;
-        #ifdef _WIN32
-        char buffer[MAX_PATH];
-        GetModuleFileNameA(NULL, buffer, MAX_PATH);
-        exePath = std::filesystem::path(buffer);
-        #else
-        exePath = std::filesystem::canonical("/proc/self/exe");
-        #endif
-        std::filesystem::path installDataPath = exePath.parent_path().parent_path() / "data" / relativePath;
-        if (std::filesystem::exists(installDataPath)) {
-            return installDataPath.string();
-        }
-        
-        // 检查开发环境中的相对路径
-        std::filesystem::path devDataPath = std::filesystem::path("data") / relativePath;
-        if (std::filesystem::exists(devDataPath)) {
-            return devDataPath.string();
-        }
-        
-        // 如果所有路径都不存在，返回原始相对路径
+        // 否则返回相对路径
         return relativePath;
     }
     
@@ -82,6 +60,7 @@ public:
         
         auto file = std::make_unique<std::ofstream>(fullPath);
         if (!file->is_open()) {
+            std::cerr << "无法创建文件: " << fullPath << std::endl;
             return nullptr;
         }
         

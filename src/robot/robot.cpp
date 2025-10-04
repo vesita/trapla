@@ -11,15 +11,17 @@
  * @param foot_width 足部宽度
  */
 Robot::Robot(double max_stride, double max_turn, double max_foot_separation, double min_foot_separation,
-    double foot_length, double foot_width) : 
+    double foot_length, double foot_width): 
 max_stride(max_stride),
 max_turn(max_turn),
 max_foot_separation(max_foot_separation),
-min_foot_separation(min_foot_separation), 
+min_foot_separation(min_foot_separation),
+active_distance(max_stride * 0.4),
 now_which_foot_to_move(WhichFoot::Left) {
     // 初始化足部，将足部形状信息传递给每个足部
-    feet[0] = Foot(SqDot(0.0, 0.0), 0.0, foot_length, foot_width);  // 左脚
-    feet[1] = Foot(SqDot(0.0, 0.0), 0.0, foot_length, foot_width);  // 右脚
+    feet[0] = Foot(SqDot(foot_width / 2 + 1, foot_length / 2 + 1), 0.0, foot_length, foot_width);  // 左脚
+    feet[1] = Foot(SqDot(foot_width / 2 + 1, foot_length / 2 + 1 + 0.6 * min_foot_separation + 0.4 * max_foot_separation),
+        0.0, foot_length, foot_width);  // 右脚
 }
 
 /**
@@ -35,7 +37,7 @@ void Robot::walk_update() {
 
 void Robot::walk_update(const SqDot& new_pos) { 
     Foot& sw = get_swing_foot();
-    sw = sw.next(new_pos);
+    sw = next(new_pos);
     walk_update();
 }
 
@@ -147,6 +149,19 @@ Foot& Robot::get_swing_foot() {
 }
 
 /**
+ * @brief 获取当前摆动脚的const引用
+ * 
+ * @return 当前摆动脚的const引用
+ */
+const Foot& Robot::get_swing_foot() const {
+    if (now_which_foot_to_move == WhichFoot::Left) {
+        return feet[0];
+    } else {
+        return feet[1];
+    }
+}
+
+/**
  * @brief 获取当前支撑脚的引用
  * 
  * @return 当前支撑脚的引用
@@ -175,7 +190,7 @@ double Robot::distance(const SqDot& new_pos) {
 bool Robot::satisfy_spacing(const SqDot& new_pos) { 
     auto swing_foot = get_swing_foot();
     auto support_foot = get_support_foot();
-    auto new_foot = swing_foot.next(new_pos);
+    auto new_foot = next(new_pos);
     // 获取新位置覆盖区域的四角
     std::vector<SqDot> points = new_foot.corner();
 
@@ -185,7 +200,7 @@ bool Robot::satisfy_spacing(const SqDot& new_pos) {
     // 正向中心线+半边长模拟近侧外形线
     SqLine as_near_side_line(support_foot.position, support_foot.rz);
 
-    double spacing = INFINITY;
+    double spacing = std::numeric_limits<double>::infinity();
 
     // 获取四角中离近侧形线最近的点（哪怕这里不是近侧外形线，最近点是相同的）
     for (const auto& point : points) {
@@ -247,12 +262,14 @@ SlideResult Robot::slide(std::vector<SqDot>& area, Ground& ground) {
  * @return 目标落足点
  */
 SqDot Robot::walk_with_guide(const Ground& ground, const SqDot& guide_point) { 
-    auto target = get_target(ground, guide_point);
-    return bfs(ground, target);
+    auto target = get_target(guide_point);
+    auto next = bfs(ground, target);
+    walk_update(next);
+    return next;    
 }
 
-SqDot Robot::get_target(const Ground& ground, const SqDot& guide_point) {
-    auto result = direct_target(guide_point);
+SqDot Robot::get_target(const SqDot& guide_point) {
+    auto result = find_target(guide_point);
     auto sw = get_swing_foot();
     if (result.distance(sw.position) < 0.3 * sw.about_R()) {
         return little_step();
@@ -272,7 +289,7 @@ SqDot Robot::get_target(const Ground& ground, const SqDot& guide_point) {
  */
 SqDot Robot::direct_target(const SqDot& guide_point) { 
 
-    auto& support_foot = get_support_foot();
+    auto& sp = get_support_foot();
     auto& sw = get_swing_foot();
 
     double dx = guide_point.x - sw.position.x;
@@ -284,9 +301,9 @@ SqDot Robot::direct_target(const SqDot& guide_point) {
         return guide_point;
     }
     
-    // 在从当前位置到目标点的连线上搜索满足约束条件的最近点
-    const double step_size = 0.1; // 搜索步长
-    for (double ratio = step_size; ratio < 1.0; ratio += step_size) {
+    // 从引导点向当前位置反向搜索满足约束条件的最近点
+    const double step_size = 0.1; // 使用较小步长以提高精度
+    for (double ratio = 1.0 - step_size; ratio > 0; ratio -= step_size) {
         SqDot test_point(sw.position.x + dx * ratio, 
                          sw.position.y + dy * ratio);
         
@@ -297,6 +314,21 @@ SqDot Robot::direct_target(const SqDot& guide_point) {
     
     // 如果连线上没有满足约束的点，则返回当前位置
     return sw.position;
+}
+
+SqDot Robot::find_target(const SqDot& guide_point) {
+    auto candidates = walk_candidates();
+    
+    // // 如果没有找到候选点，使用direct_target作为备选方案
+    // if (candidates.empty()) {
+    //     return direct_target(guide_point);
+    // }
+    
+    auto cmp = [&](const SqDot& a, const SqDot& b) {
+        return a.distance(guide_point) < b.distance(guide_point);
+    };
+    std::sort(candidates.begin(), candidates.end(), cmp);
+    return candidates[0];
 }
 
 SqDot Robot::little_step() {
@@ -314,18 +346,25 @@ SqDot Robot::little_step() {
  * @return 路径点序列
  */
 std::vector<SqDot> Robot::find_path(const Ground& ground, const SqDot& goal) {
+    // 搜索初始化
     std::vector<SqDot> path;
-    auto guides = scale_star(ground.map, position().as_index(), goal.as_index(), 1.0/max_stride);
+    auto temp = position();
+    auto start = temp.as_index();
+    auto target = goal.as_index();
+    auto guides = scale_star(ground.map, start, target, 1.0/max_stride);
     std::reverse(guides.begin(), guides.end());
     int tick = 2 * guides.size() + 127;
-    while (!guides.empty()) {
-        auto guide = guides.back();
-        path.emplace_back(walk_with_guide(ground, guide.as_dot()));
-        if (path.back().distance(guide.as_dot()) < max_stride * 0.6) {
+
+    // 路径搜索
+    while (!guides.empty() && tick > 0 && !reach_target(goal)) {
+        while(reach_target(guides.back().as_dot())) {
             guides.pop_back();
+            if (guides.empty()) return path;
         }
-        walk_update(path.back());
-        if (--tick < 0) break;
+        auto guide = guides.back();
+        SqDot next_step = walk_with_guide(ground, guide.as_dot());
+        path.emplace_back(next_step);
+        tick--;
     }
     return path;
 }
@@ -334,7 +373,7 @@ std::vector<SqDot> Robot::rot_neighbour(const SqDot& dot, double rot, double R) 
     auto dist = R * cos(rot);
     auto disn = R * sin(rot);
     return std::vector<SqDot> {SqDot{dot.x + dist, dot.y + disn}, SqDot{dot.x - dist, dot.y - disn},
-    SqDot{dot.x + disn, dot.y - dist}, SqDot{dot.x - disn, dot.y + dist}};
+    SqDot{dot.x + disn, dot.y - dist}, SqDot{dot.x - disn, dot.y + disn}};
 }
 
 SqDot Robot::bfs(const Ground& ground, const SqDot& target) { 
@@ -356,9 +395,12 @@ SqDot Robot::bfs(const Ground& ground, const SqDot& target) {
         // 检查当前点是否在地图范围内
         if (!ground.is_valid(now)) continue;
         
-        auto new_pos = sw.next(now);        
+        // 根据当前位置计算新的足部状态
+        auto new_foot = next(now);        
+        // 检查新位置是否满足约束条件
         if (!position_check(now)) continue;
-        if (sw.standable(ground)) return new_pos.position;
+        // 检查新位置是否可以稳定站立
+        if (new_foot.standable(ground)) return new_foot.position;
         
         // 在添加邻居点到队列前检查它们是否在地图范围内
         for (auto& point : rot_neighbour(now, sw.rz, sw.about_R())) { 
@@ -368,4 +410,57 @@ SqDot Robot::bfs(const Ground& ground, const SqDot& target) {
         }
     }
     return sw.position;
+}
+
+bool Robot::reach_target(const SqDot& target) {
+    return position().distance(target) < active_distance;
+}
+
+/**
+ * @brief 根据新位置计算足部的下一步状态
+ * 
+ * @param new_pos 新位置
+ * @return 计算出的足部下一步状态
+ */
+Foot Robot::next(const SqDot& new_pos) const {
+    // 使用机器人的active_distance作为激活距离阈值
+    auto& swing_foot = get_swing_foot();
+    
+    // 计算步长
+    double stride = swing_foot.position.distance(new_pos);
+    
+    // 如果步长超过激活距离，则计算新的朝向角，否则保持原朝向
+    double new_rz = (stride >= active_distance) ? swing_foot.position.angle(new_pos) : swing_foot.rz;
+    
+    return Foot(new_pos, new_rz, swing_foot.shape.length, swing_foot.shape.width);
+}
+
+std::vector<SqDot> Robot::walk_candidates() {
+    std::vector<SqDot> candidates;
+    
+    // 获取当前摆动脚
+    const Foot& swing_foot = get_swing_foot();
+    const Foot& support_foot = get_support_foot();
+    
+    // 设置搜索参数
+    const double resolution = 2.0; // 分辨率，控制搜索密度以保证性能
+    const double angle_resolution = 3.14159265358979323846 / 12; // 角度分辨率
+    
+    // 在激活距离到最大步长范围内搜索
+    for (double distance = active_distance; distance <= max_stride; distance += resolution) {
+        for (double angle_offset = -max_turn; angle_offset <= max_turn; angle_offset += angle_resolution) {
+            // 计算相对于支撑脚的新位置
+            double angle = support_foot.rz + angle_offset;
+            
+            // 计算新位置坐标
+            SqDot new_pos(swing_foot.position.x + distance * cos(angle),
+                          swing_foot.position.y + distance * sin(angle));
+            
+            // 检查是否满足所有约束条件
+            if (position_check(new_pos)) {
+                candidates.push_back(new_pos);
+            }
+        }
+    }
+    return candidates;
 }

@@ -7,6 +7,7 @@
 #include "csv/writer.hpp"
 #include "ground/ground.hpp"
 #include "robot/robot.hpp"
+#include "utils/io.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -25,64 +26,21 @@ int main(int argc, char const *argv[]) {
     // 在Windows上设置控制台代码页为UTF-8
     SetConsoleOutputCP(CP_UTF8);
 #endif
-
     try {
         std::cout << "=== 双足机器人路径规划系统 ===" << std::endl;
         
-        // 初始化IO管理器
+        // 初始化IO管理器并设置工作目录
         auto& ioManager = IOManager::get_instance();
-        
-        // 演示CSV读写工具的使用
-        std::cout << "=== CSV工具使用演示 ===" << std::endl;
-        
-        // 创建示例CSV数据并写入文件
-        CSVWriter writer;
-        std::vector<std::vector<double>> sampleData = {
-            {1.0, 2.0, 3.0},
-            {4.0, 5.0, 6.0},
-            {7.0, 8.0, 9.0}
-        };
-        std::vector<std::string> columnNames = {"列1", "列2", "列3"};
-        
-        // 写入示例数据
-        std::string sampleFile = ioManager.build_path("data/csv/sample_data.csv");
-        // 确保data/csv目录存在
-        ioManager.createDirectories(sampleFile);
-        if (writer.writeToFile(sampleFile, sampleData, columnNames)) {
-            std::cout << "示例数据已写入到 " << sampleFile << std::endl;
-        } else {
-            std::cerr << "写入示例数据失败" << std::endl;
-            return 1;
-        }
-        
-        // 演示CSV读取器的使用
-        CSVReader reader;
-        if (reader.readFromFile(sampleFile)) {
-            std::cout << "成功读取文件，数据尺寸: " << reader.getRows() 
-                      << "行 x " << reader.getCols() << "列" << std::endl;
-            
-            // 输出读取的数据
-            const auto& data = reader.getData();
-            for (size_t i = 0; i < data.size() && i < 5; ++i) {  // 限制输出前5行
-                std::cout << "第" << i+1 << "行: ";
-                for (size_t j = 0; j < data[i].size(); ++j) {
-                    std::cout << data[i][j];
-                    if (j < data[i].size() - 1) std::cout << ", ";
-                }
-                std::cout << std::endl;
-            }
-            if (data.size() > 5) {
-                std::cout << "... (省略更多行)" << std::endl;
-            }
-        } else {
-            std::cerr << "读取文件失败" << std::endl;
-            return 1;
-        }
+        std::filesystem::path exePath(argv[0]);
+        std::filesystem::path parentPath = exePath.parent_path();
+        // 设置工作目录为可执行文件所在目录
+        ioManager.set_work_path(parentPath.string());
         
         std::cout << std::endl << "=== 路径规划演示 ===" << std::endl;
         
-        // 检查地形数据文件是否存在
-        std::string mapFile = ioManager.build_path("data/csv/map.csv");
+        // 构建地形数据文件路径
+        std::string mapFile = ioManager.build_path("../data/csv/map.csv");
+        std::cout << "尝试读取文件: " << mapFile << std::endl;
         if (!std::filesystem::exists(mapFile)) {
             std::cerr << "错误: 地形数据文件 " << mapFile << " 不存在" << std::endl;
             std::cerr << "请确保数据文件存在后再运行程序" << std::endl;
@@ -115,20 +73,12 @@ int main(int argc, char const *argv[]) {
         } else {
             // 使用默认起点和终点进行测试
             start = SqDot(0, 0);
-            goal = SqDot(50, 50);
+            goal = SqDot(500, 500);
             
             std::cout << "使用默认起点: (0, 0)" << std::endl;
-            std::cout << "使用默认终点: (50, 50)" << std::endl;
+            std::cout << "使用默认终点: (500, 500)" << std::endl;
             std::cout << "提示: 可通过命令行参数指定起点和终点坐标: " << argv[0] << " <start_x> <start_y> <goal_x> <goal_y>" << std::endl;
         }
-        
-        // 设置机器人的初始足部位置
-        std::cout << "设置机器人初始足部位置..." << std::endl;
-        // 将左脚放在起点
-        robot.feet[0] = Foot(start, 0.0, robot.feet[0].shape.length, robot.feet[0].shape.width);
-        // 将右脚放在起点附近
-        robot.feet[1] = Foot(SqDot(start.x, start.y - 2.0), 0.0, 
-                           robot.feet[1].shape.length, robot.feet[1].shape.width);
         
         // 调用路径规划算法
         std::cout << "开始路径规划..." << std::endl;
@@ -149,6 +99,7 @@ int main(int argc, char const *argv[]) {
         }
         
         // 将路径结果写入CSV文件
+        CSVWriter writer;
         std::vector<std::vector<double>> csvData;
         std::vector<std::string> columnNamesPath = {"x", "y"};
         
@@ -157,8 +108,8 @@ int main(int argc, char const *argv[]) {
             csvData.push_back({point.x, point.y});
         }
         
-        // 写入CSV文件
-        std::string filename = ioManager.build_path("data/csv/path_result.csv");
+        // 写入CSV文件（相对于可执行文件目录）
+        std::string filename = ioManager.build_path("../data/csv/path_result.csv");
         std::cout << "正在保存路径结果到 " << filename << " ..." << std::endl;
         if (writer.writeToFile(filename, csvData, columnNamesPath)) {
             std::cout << "路径结果已成功保存到 " << filename << std::endl;

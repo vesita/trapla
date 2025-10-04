@@ -660,6 +660,15 @@ public:
      * @param D 平面方程系数D
      */
     CuPlain(double A=0.0, double B=0.0, double C=0.0, double D=0.0);
+
+    /**
+     * @brief 通过三个点构造平面
+     * 
+     * @param three 三个点的数组
+     */
+    CuPlain(const std::array<CuDot, 3>& three);
+    
+    CuPlain(const std::vector<CuDot>& three);
     
     
     /**
@@ -668,7 +677,15 @@ public:
      * @param dot 三个点
      * @return 如果定义成功返回true，否则返回false
      */
-    bool define_plaine(const std::array<CuDot, 3>& dot);
+    bool define_plain(const std::array<CuDot, 3>& dots);
+    
+    /**
+     * @brief 通过三个点定义平面
+     * 
+     * @param dot 三个点的向量
+     * @return 如果定义成功返回true，否则返回false
+     */
+    bool define_plain(const std::vector<CuDot>& dots);
     
     
     /**
@@ -677,8 +694,7 @@ public:
      * @param dot 检查点
      * @return 点相对于平面的位置
      */
-    CuPos get_pos(const CuDot& dot) const;
-    
+    CuPos get_pos(const CuDot& dot) const;    
     
     /**
      * @brief 计算点到平面的距离
@@ -705,8 +721,8 @@ public:
     double normal_angle() const;
 };
 
-#endif
+CuPlain up_fit(const CuDot& dot, std::array<CuDot, 3>& three);
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
+CuPlain down_fit(const CuDot& dot, std::array<CuDot, 3>& three);
+
 #endif

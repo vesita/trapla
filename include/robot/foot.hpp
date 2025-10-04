@@ -113,7 +113,7 @@ public:
      */
     void set(double x, double y, double rz);
 
-    Foot next(const SqDot& new_pos) const;
+    // Foot next(const SqDot& new_pos) const;
 
     double direction_delta(const Foot& other) const;
 

@@ -34,8 +34,8 @@ Ground::Ground(int rows, int cols) : map(rows, cols, 0.0) {
  * @return 站立角度（弧度）
  */
 double Ground::stand_angle(std::vector<SqDot> area) const {
-    CuPlain plaine = trip(area);
-    return plaine.normal_angle();
+    CuPlain plain = trip(area);
+    return plain.normal_angle();
 }
 
 /**
@@ -64,140 +64,29 @@ CuPlain Ground::trip(std::vector<SqDot> area) const {
         if (point.x < 0 || point.x >= map.rows() || point.y < 0 || point.y >= map.cols()) {
             return CuPlain();
         }
-        dots.emplace_back(CuDot{static_cast<double>(point.x), static_cast<double>(point.y), map[point.x][point.y]});
+        dots.emplace_back(CuDot{point.x, point.y, map[point.x][point.y]});
     }
     
     if (dots.size() < 3) {
         return CuPlain();
     }
     
-
     if (dots.size() == 3) {
         std::array<CuDot, 3> results = {dots[0], dots[1], dots[2]};
-        CuPlain plaine;
-        plaine.define_plaine(results);
+        CuPlain plaine(results);
         return plaine;
     }
     
-    auto height_cmp = [](const CuDot& a, const CuDot& b) { return a.z < b.z; };
-    std::sort(dots.begin(), dots.end(), height_cmp);
+    // 使用前三个点构造初始平面
+    std::array<CuDot, 3> three_points = {dots[0], dots[1], dots[2]};
+    CuPlain plane(three_points);
     
-
-    std::array<CuDot, 3> results;
-    results[0] = dots.back();
-    dots.pop_back();
-    
-
-    double max_dist_sq = -1;
-    size_t second_idx = 0;
-    for (size_t i = 0; i < dots.size(); i++) {
-        double dx = dots[i].x - results[0].x;
-        double dy = dots[i].y - results[0].y;
-        double dist_sq = dx * dx + dy * dy;
-        if (dist_sq > max_dist_sq) {
-            max_dist_sq = dist_sq;
-            second_idx = i;
-        }
-    }
-    results[1] = dots[second_idx];
-    dots.erase(dots.begin() + second_idx);
-    
-
-    double max_area = -1;
-    size_t third_idx = 0;
-    for (size_t i = 0; i < dots.size(); i++) {
-
-        double ax = results[1].x - results[0].x;
-        double ay = results[1].y - results[0].y;
-        double bx = dots[i].x - results[0].x;
-        double by = dots[i].y - results[0].y;
-        double area = std::abs(ax * by - ay * bx);
-        if (area > max_area) {
-            max_area = area;
-            third_idx = i;
-        }
-    }
-    results[2] = dots[third_idx];
-    dots.erase(dots.begin() + third_idx);
-    
-    CuPlain plaine;
-    plaine.define_plaine(results);
-    
-
-    bool changed = true;
-    const int max_iterations = 100;
-    int iterations = 0;
-    
-    while (changed && !dots.empty() && iterations < max_iterations) {
-        changed = false;
-        iterations++;
-        
-
-        double max_distance = 0;
-        int best_point_idx = -1;
-        CuPos best_point_pos;
-        
-        for (size_t i = 0; i < dots.size(); i++) {
-            double distance = plaine.distance(dots[i]);
-            CuPos pos = plaine.get_pos(dots[i]);
-            
-
-            if (pos == CuPos::Above && distance > max_distance) {
-                max_distance = distance;
-                best_point_idx = static_cast<int>(i);
-                best_point_pos = pos;
-            }
-        }
-        
-
-        if (best_point_idx >= 0) {
-
-            double best_improvement = 0;
-            int best_replace_idx = -1;
-            
-            for (int i = 0; i < 3; i++) {
-
-                std::array<CuDot, 3> temp_results = results;
-                temp_results[i] = dots[best_point_idx];
-                
-
-                CuPlain temp_plane;
-                temp_plane.define_plaine(temp_results);
-                
-
-                double original_error = 0;
-                double new_error = 0;
-                
-
-                for (const auto& dot : dots) {
-                    original_error += plaine.distance(dot);
-                    new_error += temp_plane.distance(dot);
-                }
-                
-                double improvement = original_error - new_error;
-                if (improvement > best_improvement) {
-                    best_improvement = improvement;
-                    best_replace_idx = i;
-                }
-            }
-            
-
-            if (best_replace_idx >= 0) {
-                results[best_replace_idx] = dots[best_point_idx];
-                dots.erase(dots.begin() + best_point_idx);
-                plaine.define_plaine(results);
-                changed = true;
-            } else {
-
-                dots.erase(dots.begin() + best_point_idx);
-            }
-        } else {
-
-            break;
-        }
+    // 使用up_fit优化平面，确保所有点都不在平面之上
+    for (const auto& dot : dots) {
+        plane = up_fit(dot, three_points);
     }
     
-    return plaine;
+    return plane;
 }
 
 /**
@@ -207,8 +96,8 @@ CuPlain Ground::trip(std::vector<SqDot> area) const {
  * @return 区域的法向量
  */
 CuDot Ground::normal(std::vector<SqDot> area) const {
-    CuPlain plaine = trip(area);
-    return plaine.normal_vector();
+    CuPlain plain = trip(area);
+    return plain.normal_vector();
 }
 
 /**
@@ -295,12 +184,12 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
 
     // 5. 使用凸包中的前三个点初始化平面
     std::array<CuDot, 3> initial_points = {hull[0], hull[1], hull[2]};
-    CuPlain plane;
-    plane.define_plaine(initial_points);
+    CuPlain plain;
+    plain.define_plain(initial_points);
 
     // 如果只有3个点，直接返回
     if (hull.size() == 3) {
-        return plane;
+        return plain;
     }
 
     // 6. 迭代优化平面，尝试用剩余的凸包点替换当前平面点以获得更好的拟合
@@ -317,7 +206,7 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
         int best_point_idx = -1;
         
         for (size_t i = 0; i < hull.size(); i++) {
-            double distance = plane.distance(hull[i]);
+            double distance = plain.distance(hull[i]);
             if (distance > max_distance) {
                 max_distance = distance;
                 best_point_idx = static_cast<int>(i);
@@ -338,15 +227,15 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
                     (i == 2) ? hull[best_point_idx] : initial_points[2]
                 };
 
-                CuPlain temp_plane;
-                if (temp_plane.define_plaine(temp_points)) {
+                CuPlain temp_plain;
+                if (temp_plain.define_plain(temp_points)) {
                     // 计算原始平面和临时平面的总误差
                     double original_error = 0;
                     double new_error = 0;
 
                     for (const auto& dot : hull) {
-                        original_error += plane.distance(dot);
-                        new_error += temp_plane.distance(dot);
+                        original_error += plain.distance(dot);
+                        new_error += temp_plain.distance(dot);
                     }
                     
                     // 计算改进值
@@ -361,7 +250,7 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
             // 如果找到改进的替换方案，则更新平面
             if (best_replace_idx >= 0) {
                 initial_points[best_replace_idx] = hull[best_point_idx];
-                plane.define_plaine(initial_points);
+                plain.define_plain(initial_points);
                 changed = true;
             }
         } else {
@@ -370,7 +259,7 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
         }
     }
     
-    return plane;
+    return plain;
 }
 
 /**

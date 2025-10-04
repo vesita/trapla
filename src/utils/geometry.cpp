@@ -989,33 +989,55 @@ CuPlain::CuPlain(double A, double B, double C, double D): A(A), B(B), C(C), D(D)
 }
 
 /**
+ * @brief 通过三个点构造平面
+ * 
+ * @param three 三个点的数组
+ */
+CuPlain::CuPlain(const std::array<CuDot, 3>& three) {
+    define_plain(three);
+}
+
+CuPlain::CuPlain(const std::vector<CuDot>& three) {
+    if (three.size() != 3) {
+        // 初始化默认值
+        A = B = C = D = 0.0;
+        define_extend = 0;
+        return;
+    }
+    define_plain(three);
+}
+
+/**
  * @brief 通过三个点定义平面
  * 
- * @param dot 三个点的数组
+ * @param dot 三个点的向量
  * @return 如果成功定义平面返回true，否则返回false
  */
-bool CuPlain::define_plaine(const std::array<CuDot, 3>& dot) {
 
-    CuDot v1(dot[1].x - dot[0].x, dot[1].y - dot[0].y, dot[1].z - dot[0].z);
-    CuDot v2(dot[2].x - dot[0].x, dot[2].y - dot[0].y, dot[2].z - dot[0].z);
-    
+bool CuPlain::define_plain(const std::array<CuDot, 3>& dots) {
 
+    CuDot v1(dots[1].x - dots[0].x, dots[1].y - dots[0].y, dots[1].z - dots[0].z);
+    CuDot v2(dots[2].x - dots[0].x, dots[2].y - dots[0].y, dots[2].z - dots[0].z);
     CuDot normal(v1.y * v2.z - v1.z * v2.y,
                  v1.z * v2.x - v1.x * v2.z,
                  v1.x * v2.y - v1.y * v2.x);
-    
-
     if (normal.x == 0 && normal.y == 0 && normal.z == 0) {
         return false;
     }
-    
 
     A = normal.x;
     B = normal.y;
     C = normal.z;
-    D = -(A * dot[0].x + B * dot[0].y + C * dot[0].z);
+    D = -(A * dots[0].x + B * dots[0].y + C * dots[0].z);
     
     return true;
+}
+
+bool CuPlain::define_plain(const std::vector<CuDot>& dots) {
+    if (dots.size() != 3) {
+        return false;
+    }
+    return define_plain(std::array<CuDot, 3>{dots[0], dots[1], dots[2]});
 }
 
 /**
@@ -1072,21 +1094,74 @@ CuDot CuPlain::normal_vector() const {
  * @return 夹角（弧度）
  */
 double CuPlain::normal_angle() const {
-
     double magnitude = sqrt(A*A + B*B + C*C);
-    
-
     if (magnitude == 0) {
         return 0.0;
     }
-    
-
-    double cos_theta = C / magnitude;
-    
-
-    cos_theta = std::max(-1.0, std::min(1.0, cos_theta));
-    
-
     double bottom = sqrt(A*A + B*B);
-    return atan2(bottom, C);
+    return atan2(bottom, std::abs(C));
+}
+
+CuPlain up_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
+    CuPlain plain(three);
+    
+    // 如果点已经在平面内部或下方，直接返回
+    if (plain.get_pos(dot) != CuPos::Above) {
+        return plain;
+    }
+    
+    // 使用swap思想优化：尝试将dot点与three中的每个点"交换"，构造新的平面
+    for (int i = 0; i < 3; i++) {
+        // 保存当前点，并用dot替换它（模拟交换操作）
+        CuDot temp = three[i];
+        three[i] = dot;
+        
+        // 构造新平面
+        CuPlain new_plain(three);
+        
+        // 检查dot点相对于新平面的位置
+        if (new_plain.get_pos(dot) != CuPos::Above) {
+            // 如果满足条件，返回新平面
+            return new_plain;
+        }
+        
+        // 恢复原来的点
+        three[i] = temp;
+    }
+    
+    // 如果通过单点替换无法满足条件，则直接将dot点作为其中一个点来构造平面
+    three[0] = dot;
+    return CuPlain(three);
+}
+
+CuPlain down_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
+    CuPlain plain(three);
+    
+    // 如果点已经在平面内部或上方，直接返回
+    if (plain.get_pos(dot) != CuPos::Below) {
+        return plain;
+    }
+    
+    // 使用swap思想优化：尝试将dot点与three中的每个点"交换"，构造新的平面
+    for (int i = 0; i < 3; i++) {
+        // 保存当前点，并用dot替换它（模拟交换操作）
+        CuDot temp = three[i];
+        three[i] = dot;
+        
+        // 构造新平面
+        CuPlain new_plain(three);
+        
+        // 检查dot点相对于新平面的位置
+        if (new_plain.get_pos(dot) != CuPos::Below) {
+            // 如果满足条件，返回新平面
+            return new_plain;
+        }
+        
+        // 恢复原来的点
+        three[i] = temp;
+    }
+    
+    // 如果通过单点替换无法满足条件，则直接将dot点作为其中一个点来构造平面
+    three[0] = dot;
+    return CuPlain(three);
 }

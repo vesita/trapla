@@ -23,6 +23,8 @@ enum class WhichFoot { Left, Right };
  */
 class Robot {
 public:
+    double active_distance = 0.0;
+
     /**
      * @brief 机器人的两只脚
      * 使用数组存储左右两只脚，通过索引访问
@@ -141,6 +143,7 @@ public:
      * @return 当前摆动脚的引用
      */
     Foot& get_swing_foot();
+    const Foot& get_swing_foot() const;
 
     /**
      * @brief 获取当前支撑脚的引用
@@ -206,7 +209,7 @@ public:
      */
     SqDot walk_with_guide(const Ground& ground, const SqDot& guide_point);
 
-    SqDot get_target(const Ground& ground, const SqDot& guide_point);
+    SqDot get_target(const SqDot& guide_point);
     
     /**
      * @brief 计算直接目标点
@@ -218,6 +221,8 @@ public:
      * @return 直接目标点
      */
     SqDot direct_target(const SqDot& guide_point);
+
+    SqDot find_target(const SqDot& guide_point);
 
     SqDot little_step();
     
@@ -233,6 +238,18 @@ public:
     std::vector<SqDot> rot_neighbour(const SqDot& dot, double rot, double R);
 
     SqDot bfs(const Ground& ground, const SqDot& target);
+
+    bool reach_target(const SqDot& target);
+    
+    /**
+     * @brief 根据新位置计算足部的下一步状态
+     * 
+     * @param new_pos 新位置
+     * @return 计算出的足部下一步状态
+     */
+    Foot next(const SqDot& new_pos) const;
+
+    std::vector<SqDot> walk_candidates();
 };
 
 #endif

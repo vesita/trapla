@@ -175,18 +175,18 @@ void Foot::set(double x, double y, double rz) {
     this->rz = rz;
 }
 
-Foot Foot::next(const SqDot& new_pos) const {
-    // 定义激活距离阈值，只有当步长超过此距离时，脚的朝向才会改变
-    const double activation_distance = 10.0;
+// Foot Foot::next(const SqDot& new_pos) const {
+//     // 定义激活距离阈值，只有当步长超过此距离时，脚的朝向才会改变
+//     const double activation_distance = 10.0;
     
-    // 计算步长
-    double stride = position.distance(new_pos);
+//     // 计算步长
+//     double stride = position.distance(new_pos);
     
-    // 如果步长超过激活距离，则计算新的朝向角，否则保持原朝向
-    double new_rz = (stride >= activation_distance) ? position.angle(new_pos) : this->rz;
+//     // 如果步长超过激活距离，则计算新的朝向角，否则保持原朝向
+//     double new_rz = (stride >= activation_distance) ? position.angle(new_pos) : this->rz;
     
-    return Foot(new_pos, new_rz, shape.length, shape.width);
-}
+//     return Foot(new_pos, new_rz, shape.length, shape.width);
+// }
 
 double Foot::direction_delta(const Foot& other) const {
     return other.rz - rz;
@@ -236,7 +236,20 @@ std::vector<SqDot> Foot::corner() const {
 }
 
 bool Foot::standable(const Ground& ground) {
-    return ground.convex(cover()).normal_angle() < 20/180 * M_PI;
+    // 获取足部覆盖的点
+    auto covered_points = cover();
+    
+    // 检查是否有任何覆盖点超出了地图边界
+    for (const auto& point : covered_points) {
+        if (!ground.is_valid(point)) {
+            return false;  // 如果有任何点超出边界，则不可站立
+        }
+    }
+    
+    // 只有当所有点都在地图范围内时才继续检查
+    auto plain = ground.trip(covered_points);
+    auto normal = plain.normal_angle();
+    return normal < 20.0/180.0 * M_PI;
 }
 
 double Foot::about_R() { 
