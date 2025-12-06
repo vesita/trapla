@@ -32,7 +32,7 @@ TEST(walk_with_guide_simple_test) {
     framework.info("walk_with_guide_simple_test: 开始测试walk_with_guide函数");
     
     // 调用walk_with_guide函数
-    SqDot result = robot.walk_with_guide(ground, guide_point);
+    SqDot result = robot.walk_to(ground, guide_point);
     
     framework.info("walk_with_guide_simple_test: 目标点(" + std::to_string(guide_point.x) + ", " + 
                    std::to_string(guide_point.y) + "), 实际结果(" + std::to_string(result.x) + ", " + 

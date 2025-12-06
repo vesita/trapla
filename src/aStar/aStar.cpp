@@ -11,7 +11,7 @@
  * @param goal 终点坐标
  * @return 从起点到终点的路径点序列
  */
-std::vector<Intex> a_star_search(const SqPlain& graph, const Intex& start, const Intex& goal) {
+std::vector<Intex> a_star_search(const SqPlane& graph, const Intex& start, const Intex& goal) {
 
     using que_unit = std::pair<double, Intex>;
     auto cmp = [](const que_unit& a, const que_unit& b) {
@@ -75,7 +75,7 @@ std::vector<Intex> a_star_search(const SqPlain& graph, const Intex& start, const
  * @param stride 步长参数，用于计算缩放比例
  * @return 在原始地图上的引导点序列
  */
-std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const Intex& goal, const double& scale) {
+std::vector<Intex> scale_star(const SqPlane& graph, const Intex& start, const Intex& goal, const double& scale) {
 
     auto ss = start.scale(scale);
     auto sg = goal.scale(scale);
@@ -97,7 +97,7 @@ std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const In
         Intex current = frontier.top().second;
         frontier.pop();
         if (current == sg) break;
-        for (auto& next: current.get_neighbour(sr, sc)) {            
+        for (auto& next: current.get_neighbour_shuffled(sr, sc)) {            
             // 检查邻居点是否在有效范围内
             if (next.x < 0 || next.x >= sr || next.y < 0 || next.y >= sc) {
                 continue;
@@ -136,7 +136,7 @@ std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const In
     return guides;
 }
 
-// std::vector<SqDot> scale_star(const SqPlain& graph, const SqDot& start, const SqDot& goal, const double& scale) {
+// std::vector<SqDot> scale_star(const SqPlane& graph, const SqDot& start, const SqDot& goal, const double& scale) {
 
 //     auto ss = start.scale(scale);
 //     auto sg = goal.scale(scale);
@@ -202,7 +202,7 @@ std::vector<Intex> scale_star(const SqPlain& graph, const Intex& start, const In
  * @param se 第二个点
  * @return 区域的陡峭程度评分，负值表示不可行区域
  */
-double steep_extend(const SqPlain& graph, const Intex& fi, const Intex& se) {
+double steep_extend(const SqPlane& graph, const Intex& fi, const Intex& se) {
 
     // 确保 orth_near 正确限制点的坐标在地图范围内
     Intex bounded_first = graph.orth_near(fi);

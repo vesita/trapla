@@ -152,6 +152,10 @@ SqDot SqDot::central_restore(const double& scale) const {
     return SqDot(x / scale + offset, y / scale + offset);
 }
 
+SqDot SqDot::bias(double angle, double distance) const {
+    return SqDot(x + distance * cos(angle), y + distance * sin(angle));
+}
+
 /**
  * @brief 判断两个点是否相等
  * 
@@ -276,6 +280,19 @@ std::vector<SqDot> SqDot::get_neighbour() const {
 }
 
 /**
+ * @brief 获取所有四个方向的邻居点并随机打乱顺序
+ * 
+ * @return 随机顺序的邻居点向量
+ */
+std::vector<SqDot> SqDot::get_neighbour_shuffled() const {
+    std::vector<SqDot> neighbours = get_neighbour();
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(neighbours.begin(), neighbours.end(), g);
+    return neighbours;
+}
+
+/**
  * @brief 获取指定范围内的邻居点
  * 
  * @param x_ceil x方向上限
@@ -292,6 +309,21 @@ std::vector<SqDot> SqDot::get_neighbour(int x_ceil, int y_ceil) const {
             neighbours.push_back(neighbour);
         }
     }
+    return neighbours;
+}
+
+/**
+ * @brief 获取指定范围内的邻居点并随机打乱顺序
+ * 
+ * @param x_ceil x方向上限
+ * @param y_ceil y方向上限
+ * @return 随机顺序的范围内邻居点向量
+ */
+std::vector<SqDot> SqDot::get_neighbour_shuffled(int x_ceil, int y_ceil) const {
+    std::vector<SqDot> neighbours = get_neighbour(x_ceil, y_ceil);
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(neighbours.begin(), neighbours.end(), g);
     return neighbours;
 }
 
@@ -328,7 +360,7 @@ Intex SqDot::as_index() const {
  * 
  * @param map 地图数据
  */
-SqPlain::SqPlain(std::vector<std::vector<double>> map): map(std::move(map)) {
+SqPlane::SqPlane(std::vector<std::vector<double>> map): map(std::move(map)) {
     return;
 }
 
@@ -359,12 +391,12 @@ SqLine SqLine::normal(const SqDot& point) const {
  * @param cols 列数
  * @param value 初始值
  */
-SqPlain::SqPlain(int rows, int cols, double value) : map(rows, std::vector<double>(cols, value)) {}
+SqPlane::SqPlane(int rows, int cols, double value) : map(rows, std::vector<double>(cols, value)) {}
 
 /**
  * @brief 默认构造函数
  */
-SqPlain::SqPlain() {}
+SqPlane::SqPlane() {}
 
 /**
  * @brief 检查点是否在地图边缘且可通行
@@ -372,7 +404,7 @@ SqPlain::SqPlain() {}
  * @param point 检查的点
  * @return 如果点在地图范围内且可通行返回true，否则返回false
  */
-bool SqPlain::edge_allowed(const SqDot& point) const {
+bool SqPlane::edge_allowed(const SqDot& point) const {
 
     if (point.x < 0 || point.x >= map.size() || point.y < 0 || point.y >= map[0].size()) {
         return false;
@@ -386,7 +418,7 @@ bool SqPlain::edge_allowed(const SqDot& point) const {
     return true;
 }
 
-bool SqPlain::edge_allowed(const Intex& point) const { 
+bool SqPlane::edge_allowed(const Intex& point) const { 
     if (point.x < 0 || point.x >= map.size() || point.y < 0 || point.y >= map[0].size()) {
         return false;
     }
@@ -405,7 +437,7 @@ bool SqPlain::edge_allowed(const Intex& point) const {
  * @param idx 方向索引
  * @return 对应方向的邻居点
  */
-SqDot SqPlain::get_neighbour(const SqDot& point, int idx) const {
+SqDot SqPlane::get_neighbour(const SqDot& point, int idx) const {
 
     static const std::array<int, 4> dx = {-1, 1, 0, 0};
     static const std::array<int, 4> dy = {0, 0, -1, 1};
@@ -413,7 +445,7 @@ SqDot SqPlain::get_neighbour(const SqDot& point, int idx) const {
     return SqDot(point.x + dx[idx], point.y + dy[idx]);
 }
 
-Intex SqPlain::get_neighbour(const Intex& point, int idx) const { 
+Intex SqPlane::get_neighbour(const Intex& point, int idx) const { 
     static const std::array<int, 4> dx = {-1, 1, 0, 0};
     static const std::array<int, 4> dy = {0, 0, -1, 1};
 
@@ -426,7 +458,7 @@ Intex SqPlain::get_neighbour(const Intex& point, int idx) const {
  * @param point 原始点
  * @return 邻居点的向量
  */
-std::vector<SqDot> SqPlain::get_neighbour(const SqDot& point) const {
+std::vector<SqDot> SqPlane::get_neighbour(const SqDot& point) const {
     std::vector<SqDot> neighbours;
     for (int idx = 0; idx < 4; idx++) {
         neighbours.emplace_back(get_neighbour(point, idx));
@@ -434,11 +466,27 @@ std::vector<SqDot> SqPlain::get_neighbour(const SqDot& point) const {
     return neighbours;
 }
 
-std::vector<Intex> SqPlain::get_neighbour(const Intex& point) const { 
+std::vector<SqDot> SqPlane::get_neighbour_shuffled(const SqDot& point) const {
+    std::vector<SqDot> neighbours = get_neighbour(point);
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(neighbours.begin(), neighbours.end(), g);
+    return neighbours;
+}
+
+std::vector<Intex> SqPlane::get_neighbour(const Intex& point) const { 
     std::vector<Intex> neighbours;
     for (int idx = 0; idx < 4; idx++) {
         neighbours.push_back(get_neighbour(point, idx));
     }
+    return neighbours;
+}
+
+std::vector<Intex> SqPlane::get_neighbour_shuffled(const Intex& point) const {
+    std::vector<Intex> neighbours = get_neighbour(point);
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(neighbours.begin(), neighbours.end(), g);
     return neighbours;
 }
 
@@ -448,7 +496,7 @@ std::vector<Intex> SqPlain::get_neighbour(const Intex& point) const {
  * @param point 原始点
  * @return 有效邻居点的向量
  */
-std::vector<SqDot> SqPlain::get_valid_neighbours(const SqDot& point) const {
+std::vector<SqDot> SqPlane::get_valid_neighbours(const SqDot& point) const {
     std::vector<SqDot> valid_neighbours;
     for (int idx = 0; idx < 4; idx++) {
         SqDot neighbour = get_neighbour(point, idx);
@@ -459,7 +507,15 @@ std::vector<SqDot> SqPlain::get_valid_neighbours(const SqDot& point) const {
     return valid_neighbours;
 }
 
-std::vector<Intex> SqPlain::get_valid_neighbours(const Intex& point) const { 
+std::vector<SqDot> SqPlane::get_valid_neighbours_shuffled(const SqDot& point) const {
+    std::vector<SqDot> valid_neighbours = get_valid_neighbours(point);
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(valid_neighbours.begin(), valid_neighbours.end(), g);
+    return valid_neighbours;
+}
+
+std::vector<Intex> SqPlane::get_valid_neighbours(const Intex& point) const { 
     std::vector<Intex> valid_neighbours;
     for (int idx = 0; idx < 4; idx++) {
         Intex neighbour = get_neighbour(point, idx);
@@ -470,19 +526,27 @@ std::vector<Intex> SqPlain::get_valid_neighbours(const Intex& point) const {
     return valid_neighbours;
 }
 
+std::vector<Intex> SqPlane::get_valid_neighbours_shuffled(const Intex& point) const {
+    std::vector<Intex> valid_neighbours = get_valid_neighbours(point);
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(valid_neighbours.begin(), valid_neighbours.end(), g);
+    return valid_neighbours;
+}
+
 /**
  * @brief 获取地图边界内的点
  * 
  * @param point 原始点
  * @return 边界内的点
  */
-SqDot SqPlain::orth_near(const SqDot& point) const { 
+SqDot SqPlane::orth_near(const SqDot& point) const { 
     int x = std::max(0, std::min(point.x_index(), rows() - 1));
     int y = std::max(0, std::min(point.y_index(), cols() - 1));
     return SqDot(x, y);
 }
 
-Intex SqPlain::orth_near(const Intex& point) const { 
+Intex SqPlane::orth_near(const Intex& point) const { 
     int x = std::max(0, std::min(point.x, rows() - 1));
     int y = std::max(0, std::min(point.y, cols() - 1));
     return Intex(x, y);
@@ -495,7 +559,7 @@ Intex SqPlain::orth_near(const Intex& point) const {
  * @param se 第二个点
  * @return 区域的中心点
  */
-SqDot SqPlain::local_center(SqDot& fi, SqDot& se) const {
+SqDot SqPlane::local_center(SqDot& fi, SqDot& se) const {
 
     SqDot bounded_first = orth_near(fi);
     SqDot bounded_second = orth_near(se);
@@ -517,7 +581,7 @@ SqDot SqPlain::local_center(SqDot& fi, SqDot& se) const {
  * @param goal 终点
  * @return 路径点序列
  */
-std::vector<SqDot> SqPlain::find_path(SqDot start, SqDot goal) const {
+std::vector<SqDot> SqPlane::find_path(SqDot start, SqDot goal) const {
 
     std::priority_queue<std::pair<double, SqDot>, 
                         std::vector<std::pair<double, SqDot>>, 
@@ -590,7 +654,7 @@ std::vector<SqDot> SqPlain::find_path(SqDot start, SqDot goal) const {
  * @param scale 缩放比例
  * @return 缩放后的地图
  */
-SqPlain SqPlain::scale_graph(const double& scale) const {
+SqPlane SqPlane::scale_graph(const double& scale) const {
 
     int new_rows = static_cast<int>(std::ceil(map.size() * scale));
     int new_cols = static_cast<int>(std::ceil(map[0].size() * scale));
@@ -620,7 +684,7 @@ SqPlain SqPlain::scale_graph(const double& scale) const {
         }
     }
     
-    return SqPlain(std::move(new_map));
+    return SqPlane(std::move(new_map));
 }
 
 /**
@@ -629,7 +693,7 @@ SqPlain SqPlain::scale_graph(const double& scale) const {
  * @param scale 缩放比例
  * @return 缩放后的地图
  */
-SqPlain SqPlain::scale_graph_variance(double scale) const {
+SqPlane SqPlane::scale_graph_variance(double scale) const {
 
     if (scale <= 0.0) {
         return *this;
@@ -717,7 +781,7 @@ SqPlain SqPlain::scale_graph_variance(double scale) const {
         }
     }
     
-    return SqPlain(std::move(scaled_map));
+    return SqPlane(std::move(scaled_map));
 }
 
 /**
@@ -727,7 +791,7 @@ SqPlain SqPlain::scale_graph_variance(double scale) const {
  * @param side_length 区域边长
  * @return 区域汇总值
  */
-double SqPlain::summary(SqDot& center, int side_length) const {
+double SqPlane::summary(SqDot& center, int side_length) const {
     double total = 0.0;
     int count = 0;
 
@@ -753,7 +817,7 @@ double SqPlain::summary(SqDot& center, int side_length) const {
  * 
  * @return 如果地图为空返回true，否则返回false
  */
-bool SqPlain::empty() const {
+bool SqPlane::empty() const {
     return map.empty() || map[0].empty();
 }
 
@@ -762,7 +826,7 @@ bool SqPlain::empty() const {
  * 
  * @return 地图行数
  */
-int SqPlain::rows() const {
+int SqPlane::rows() const {
     return map.size();
 }
 
@@ -772,7 +836,7 @@ int SqPlain::rows() const {
  * @param scale 缩放比例
  * @return 缩放后的行数
  */
-int SqPlain::row_scale(const double& scale) const {
+int SqPlane::row_scale(const double& scale) const {
     return index_scale(rows(), scale);
 }
 
@@ -781,7 +845,7 @@ int SqPlain::row_scale(const double& scale) const {
  * 
  * @return 地图列数
  */
-int SqPlain::cols() const {
+int SqPlane::cols() const {
     return map[0].size();
 }
 
@@ -791,7 +855,7 @@ int SqPlain::cols() const {
  * @param scale 缩放比例
  * @return 缩放后的列数
  */
-int SqPlain::col_scale(const double& scale) const {
+int SqPlane::col_scale(const double& scale) const {
     return index_scale(cols(), scale);
 }
 
@@ -801,7 +865,7 @@ int SqPlain::col_scale(const double& scale) const {
  * @param index 行索引
  * @return 对应行的引用
  */
-std::vector<double>& SqPlain::operator[](int index) {
+std::vector<double>& SqPlane::operator[](int index) {
     return map[index];
 }
 
@@ -811,7 +875,7 @@ std::vector<double>& SqPlain::operator[](int index) {
  * @param index 行索引
  * @return 对应行的const引用
  */
-const std::vector<double>& SqPlain::operator[](int index) const {
+const std::vector<double>& SqPlane::operator[](int index) const {
     return map[index];
 }
 
@@ -822,11 +886,11 @@ const std::vector<double>& SqPlain::operator[](int index) const {
  * @param to 终点
  * @return 移动代价
  */
-double SqPlain::cost(const SqDot& at, const SqDot& to) const {
+double SqPlane::cost(const SqDot& at, const SqDot& to) const {
     return manhattan_distance(at, to) + map[to.x][to.y];
 }
 
-double SqPlain::cost(const Intex& at, const Intex& to) const { 
+double SqPlane::cost(const Intex& at, const Intex& to) const { 
     return manhattan_distance(at, to) + map[to.x][to.y];
 }
 
@@ -837,11 +901,11 @@ double SqPlain::cost(const Intex& at, const Intex& to) const {
  * @param scale 缩放比例
  * @return 原始地图上的点
  */
-SqDot SqPlain::restore_dot(SqDot& dot, double scale) const { 
+SqDot SqPlane::restore_dot(SqDot& dot, double scale) const { 
     return orth_near(dot.central_restore(scale));
 }
 
-Intex SqPlain::restore_dot(Intex& dot, double scale) const { 
+Intex SqPlane::restore_dot(Intex& dot, double scale) const { 
     return orth_near(dot.central_restore(scale));
 }
 
@@ -852,13 +916,13 @@ Intex SqPlain::restore_dot(Intex& dot, double scale) const {
  * @param scale 缩放比例
  * @return 原始地图上的点对
  */
-std::pair<SqDot, SqDot> SqPlain::restore(const SqDot& block, double scale) const {
+std::pair<SqDot, SqDot> SqPlane::restore(const SqDot& block, double scale) const {
     SqDot fi = orth_near(block.scale(scale));
     SqDot se = orth_near(SqDot(block.x + 1, block.y + 1).scale(scale));
     return {fi, se};
 }
 
-std::pair<Intex, Intex> SqPlain::restore(const Intex& block, double scale) const {
+std::pair<Intex, Intex> SqPlane::restore(const Intex& block, double scale) const {
     Intex fi = orth_near(block.scale(scale));
     Intex se = orth_near(Intex(block.x + 1, block.y + 1).scale(scale));
     return {fi, se};
@@ -871,7 +935,7 @@ std::pair<Intex, Intex> SqPlain::restore(const Intex& block, double scale) const
  * @param scale 缩放比例
  * @return 如果两点在同一个区块内返回true，否则返回false
  */
-bool SqPlain::in_same_block(const SqDot& a, const SqDot& b, double scale) const {
+bool SqPlane::in_same_block(const SqDot& a, const SqDot& b, double scale) const {
     SqDot a_block = a.scale(scale);
     SqDot b_block = b.scale(scale);
     return a_block == b_block;
@@ -984,7 +1048,7 @@ CuLine CuLine::normal_vector(const CuLine& other) const {
  * @param C 平面方程参数C
  * @param D 平面方程参数D
  */
-CuPlain::CuPlain(double A, double B, double C, double D): A(A), B(B), C(C), D(D), define_extend(0) {
+CuPlane::CuPlane(double A, double B, double C, double D): A(A), B(B), C(C), D(D), define_extend(0) {
     return;
 }
 
@@ -993,18 +1057,18 @@ CuPlain::CuPlain(double A, double B, double C, double D): A(A), B(B), C(C), D(D)
  * 
  * @param three 三个点的数组
  */
-CuPlain::CuPlain(const std::array<CuDot, 3>& three) {
-    define_plain(three);
+CuPlane::CuPlane(const std::array<CuDot, 3>& three) {
+    define_plane(three);
 }
 
-CuPlain::CuPlain(const std::vector<CuDot>& three) {
+CuPlane::CuPlane(const std::vector<CuDot>& three) {
     if (three.size() != 3) {
         // 初始化默认值
         A = B = C = D = 0.0;
         define_extend = 0;
         return;
     }
-    define_plain(three);
+    define_plane(three);
 }
 
 /**
@@ -1014,7 +1078,7 @@ CuPlain::CuPlain(const std::vector<CuDot>& three) {
  * @return 如果成功定义平面返回true，否则返回false
  */
 
-bool CuPlain::define_plain(const std::array<CuDot, 3>& dots) {
+bool CuPlane::define_plane(const std::array<CuDot, 3>& dots) {
 
     CuDot v1(dots[1].x - dots[0].x, dots[1].y - dots[0].y, dots[1].z - dots[0].z);
     CuDot v2(dots[2].x - dots[0].x, dots[2].y - dots[0].y, dots[2].z - dots[0].z);
@@ -1033,11 +1097,11 @@ bool CuPlain::define_plain(const std::array<CuDot, 3>& dots) {
     return true;
 }
 
-bool CuPlain::define_plain(const std::vector<CuDot>& dots) {
+bool CuPlane::define_plane(const std::vector<CuDot>& dots) {
     if (dots.size() != 3) {
         return false;
     }
-    return define_plain(std::array<CuDot, 3>{dots[0], dots[1], dots[2]});
+    return define_plane(std::array<CuDot, 3>{dots[0], dots[1], dots[2]});
 }
 
 /**
@@ -1046,7 +1110,7 @@ bool CuPlain::define_plain(const std::vector<CuDot>& dots) {
  * @param dot 点
  * @return 点相对于平面的位置（上方、下方或内部）
  */
-CuPos CuPlain::get_pos(const CuDot& dot) const {
+CuPos CuPlane::get_pos(const CuDot& dot) const {
 
     double distance = A * dot.x + B * dot.y + C * dot.z + D;
     
@@ -1066,7 +1130,7 @@ CuPos CuPlain::get_pos(const CuDot& dot) const {
  * @param dot 点
  * @return 点到平面的距离
  */
-double CuPlain::distance(const CuDot& dot) const {
+double CuPlane::distance(const CuDot& dot) const {
 
     double numerator = std::abs(A * dot.x + B * dot.y + C * dot.z + D);
     double denominator = std::sqrt(A * A + B * B + C * C);
@@ -1084,7 +1148,7 @@ double CuPlain::distance(const CuDot& dot) const {
  * 
  * @return 平面的法向量
  */
-CuDot CuPlain::normal_vector() const {
+CuDot CuPlane::normal_vector() const {
     return CuDot(A, B, C);
 }
 
@@ -1093,7 +1157,7 @@ CuDot CuPlain::normal_vector() const {
  * 
  * @return 夹角（弧度）
  */
-double CuPlain::normal_angle() const {
+double CuPlane::normal_angle() const {
     double magnitude = sqrt(A*A + B*B + C*C);
     if (magnitude == 0) {
         return 0.0;
@@ -1102,12 +1166,12 @@ double CuPlain::normal_angle() const {
     return atan2(bottom, std::abs(C));
 }
 
-CuPlain up_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
-    CuPlain plain(three);
+CuPlane up_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
+    CuPlane plane(three);
     
     // 如果点已经在平面内部或下方，直接返回
-    if (plain.get_pos(dot) != CuPos::Above) {
-        return plain;
+    if (plane.get_pos(dot) != CuPos::Above) {
+        return plane;
     }
     
     // 使用swap思想优化：尝试将dot点与three中的每个点"交换"，构造新的平面
@@ -1117,12 +1181,12 @@ CuPlain up_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
         three[i] = dot;
         
         // 构造新平面
-        CuPlain new_plain(three);
+        CuPlane new_plane(three);
         
         // 检查dot点相对于新平面的位置
-        if (new_plain.get_pos(dot) != CuPos::Above) {
+        if (new_plane.get_pos(dot) != CuPos::Above) {
             // 如果满足条件，返回新平面
-            return new_plain;
+            return new_plane;
         }
         
         // 恢复原来的点
@@ -1131,15 +1195,15 @@ CuPlain up_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
     
     // 如果通过单点替换无法满足条件，则直接将dot点作为其中一个点来构造平面
     three[0] = dot;
-    return CuPlain(three);
+    return CuPlane(three);
 }
 
-CuPlain down_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
-    CuPlain plain(three);
+CuPlane down_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
+    CuPlane plane(three);
     
     // 如果点已经在平面内部或上方，直接返回
-    if (plain.get_pos(dot) != CuPos::Below) {
-        return plain;
+    if (plane.get_pos(dot) != CuPos::Below) {
+        return plane;
     }
     
     // 使用swap思想优化：尝试将dot点与three中的每个点"交换"，构造新的平面
@@ -1149,12 +1213,12 @@ CuPlain down_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
         three[i] = dot;
         
         // 构造新平面
-        CuPlain new_plain(three);
+        CuPlane new_plane(three);
         
         // 检查dot点相对于新平面的位置
-        if (new_plain.get_pos(dot) != CuPos::Below) {
+        if (new_plane.get_pos(dot) != CuPos::Below) {
             // 如果满足条件，返回新平面
-            return new_plain;
+            return new_plane;
         }
         
         // 恢复原来的点
@@ -1163,5 +1227,33 @@ CuPlain down_fit(const CuDot& dot, std::array<CuDot, 3>& three) {
     
     // 如果通过单点替换无法满足条件，则直接将dot点作为其中一个点来构造平面
     three[0] = dot;
-    return CuPlain(three);
+    return CuPlane(three);
+}
+
+/**
+ * @brief 判断两条线段是否相交
+ * 
+ * @param p1 线段1的起点
+ * @param p2 线段1的终点
+ * @param p3 线段2的起点
+ * @param p4 线段2的终点
+ * @return true表示相交，false表示不相交
+ */
+bool segments_intersect(const SqDot& p1, const SqDot& p2, const SqDot& p3, const SqDot& p4) {
+    // 快速排斥试验
+    if ((std::min(p1.x, p2.x) > std::max(p3.x, p4.x)) || 
+        (std::min(p3.x, p4.x) > std::max(p1.x, p2.x)) ||
+        (std::min(p1.y, p2.y) > std::max(p3.y, p4.y)) ||
+        (std::min(p3.y, p4.y) > std::max(p1.y, p2.y))) {
+        return false;
+    }
+    
+    // 跨立实验
+    double cross1 = (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y);
+    double cross2 = (p2.x - p1.x) * (p4.y - p1.y) - (p4.x - p1.x) * (p2.y - p1.y);
+    double cross3 = (p4.x - p3.x) * (p1.y - p3.y) - (p1.x - p3.x) * (p4.y - p3.y);
+    double cross4 = (p4.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p4.y - p3.y);
+    
+    // 判断是否在线段两侧
+    return (cross1 * cross2 <= 0) && (cross3 * cross4 <= 0);
 }

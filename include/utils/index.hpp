@@ -5,6 +5,7 @@ struct IntexHash;
 class Intex;
 
 #include <vector>
+#include <random>
 #include "utils/scale.hpp"
 
 struct IntexHash {
@@ -52,28 +53,42 @@ public:
     /**
      * @brief 获取指定方向的邻居点
      * 
-     * @param index 方向索引(0-3)
-     * @return 对应方向的邻居点
+     * @param index 方向索引
+     * @return 指定方向的邻居点
      */
     Intex get_neighbour(int index) const;
 
-    
     /**
-     * @brief 获取所有四个方向的邻居点
+     * @brief 获取所有邻居点
      * 
-     * @return 四个方向邻居点的向量
+     * @return 所有邻居点的向量
      */
     std::vector<Intex> get_neighbour() const;
 
+    /**
+     * @brief 获取所有邻居点（乱序）
+     * 
+     * @return 所有邻居点的向量（乱序）
+     */
+    std::vector<Intex> get_neighbour_shuffled() const;
     
     /**
      * @brief 获取指定范围内的邻居点
      * 
      * @param x_ceil x方向上限
      * @param y_ceil y方向上限
-     * @return 范围内的邻居点向量
+     * @return 指定范围内的邻居点
      */
     std::vector<Intex> get_neighbour(int x_ceil, int y_ceil) const;
+
+    /**
+     * @brief 获取指定范围内的邻居点（乱序）
+     * 
+     * @param x_ceil x方向上限
+     * @param y_ceil y方向上限
+     * @return 指定范围内的邻居点（乱序）
+     */
+    std::vector<Intex> get_neighbour_shuffled(int x_ceil, int y_ceil) const;
 
     Intex central_restore(const double& scale) const;
 

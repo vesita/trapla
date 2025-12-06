@@ -2,6 +2,8 @@
 
 本项目旨在解决双足机器人在不平坦地形上的在线落足点规划问题。通过给定的三维地形图、起点和终点，项目能够规划出满足机器人物理约束条件的行走路径。
 
+目前仍然存在走猫步的问题，需要进一步解决，但已经大致能够输出路径。
+
 ## 目录
 
 - [双足机器人在线落足点规划 (Trapla)](#双足机器人在线落足点规划-trapla)
@@ -13,8 +15,6 @@
   - [构建说明](#构建说明)
   - [运行方法](#运行方法)
   - [测试](#测试)
-    - [Windows系统](#windows系统)
-    - [Linux/macOS系统](#linuxmacos系统)
 
 ## 项目背景
 
@@ -40,17 +40,41 @@
 
 ## 项目结构
 
-- `src/` - 源代码目录
-- `include/` - 头文件目录
-- `data/` - 数据文件目录
-- `scripts/` - 辅助脚本目录
-  - `data_generator/` - 数据生成脚本
-  - `transor/` - 数据格式转换脚本
-  - `sync/` - 代码同步脚本
-  - `platform/` - 平台相关脚本
-    - `windows/` - Windows平台脚本
-- `doc/` - 文档目录
-- `tests/` - 测试文件目录
+```
+.
+├── doc/                 # 文档目录
+│   ├── problem_flow.md  # 问题分析与解决方案设计文档
+│   ├── project.md       # 项目说明文档
+│   ├── scripting.md     # 脚本系统说明文档
+│   └── sync.md          # 代码同步说明文档
+├── include/             # 头文件目录
+│   ├── aStar/           # A*算法相关头文件
+│   ├── csv/             # CSV读写相关头文件
+│   ├── ground/          # 地形处理相关头文件
+│   ├── robot/           # 机器人相关头文件
+│   ├── utils/           # 工具类头文件
+│   └── prepare.hpp      # 预处理头文件
+├── scripts/             # 辅助脚本目录
+│   ├── data_generator/  # 数据生成脚本
+│   ├── sync/            # 代码同步脚本
+│   ├── transor/         # 数据格式转换脚本
+│   ├── clean_comments.py# 清理注释脚本
+│   ├── plot_guides.py   # 绘制引导点脚本
+│   ├── plot_path.py     # 绘制路径脚本
+│   └── platform/        # 平台相关脚本
+│       └── windows/     # Windows平台脚本
+├── src/                 # 源代码目录
+│   ├── aStar/           # A*算法实现
+│   ├── csv/             # CSV读写实现
+│   ├── ground/          # 地形处理实现
+│   ├── robot/           # 机器人相关实现
+│   ├── utils/           # 工具类实现
+│   └── main.cpp         # 主程序入口
+├── tests/               # 测试文件目录
+├── data/                # 数据文件目录（运行时生成）
+├── pyproject.toml       # Python项目配置
+└── readme.md            # 项目说明文件
+```
 
 ## 主要组件
 
@@ -75,20 +99,13 @@ make
 构建完成后，运行生成的可执行文件：
 
 ```bash
-./trapla
+cmake --install . --prefix=`目标路径`
+`目标路径`/bin/trapla.exe
 ```
 
 ## 测试
 
 项目包含单元测试，可以通过以下方式运行：
-
-### Windows系统
-
-```cmd
-scripts\platform\windows\run_tests.bat
-```
-
-### Linux/macOS系统
 
 ```bash
 python3 scripts/run_tests.py
@@ -99,16 +116,3 @@ python3 scripts/run_tests.py
 1. 生成测试地图数据
 2. 将JPEG格式转换为CSV格式
 3. 配置项目（CMake）
-4. 编译测试可执行文件
-5. 运行测试
-
-测试成功的输出示例：
-
-```example
-正在运行 1 个测试...
-
-正在运行测试: testFoot
-  结果: 通过
-
-测试套件执行完成。所有测试通过。
-```

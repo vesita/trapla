@@ -19,11 +19,11 @@ public:
 
     Ground(int rows, int cols);
 
-    SqPlain map;
+    SqPlane map;
     
-    CuPlain trip(std::vector<SqDot> area) const;
+    CuPlane trip(std::vector<SqDot> area) const;
     
-    CuPlain convex(std::vector<SqDot> area) const;
+    CuPlane convex(std::vector<SqDot> area) const;
 
     CuDot normal(std::vector<SqDot> area) const;
     

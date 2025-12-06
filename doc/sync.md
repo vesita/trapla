@@ -32,7 +32,7 @@
 运行推送脚本:
 
 ```bash
-python scripts/put-sync.py
+python scripts/sync/put-sync.py
 ```
 
 脚本会执行以下操作:
@@ -51,7 +51,7 @@ python scripts/put-sync.py
 运行拉取脚本:
 
 ```bash
-python scripts/get-sync.py
+python scripts/sync/get-sync.py
 ```
 
 脚本会执行以下操作:
@@ -74,13 +74,13 @@ python scripts/get-sync.py
 1. 在 PC-A (进度超前) 上运行:
 
    ```bash
-   python scripts/put-sync.py
+   python scripts/sync/put-sync.py
    ```
 
 2. 在 PC-B (进度落后) 上运行:
 
    ```bash
-   python scripts/get-sync.py
+   python scripts/sync/get-sync.py
    ```
 
 ## 使用场景

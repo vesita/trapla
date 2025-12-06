@@ -106,10 +106,10 @@
 
 #### 3.2.3 足部姿态计算
 
-通过三点迭代算法计算足部与地面接触的最佳拟合平面：
+通过平面拟合算法计算足部与地面接触的最佳拟合平面：
 
 - **点云采样**：获取足部覆盖区域内的地面点云数据
-- **平面拟合**：使用三点迭代算法计算最佳接触平面
+- **平面拟合**：使用最小二乘法计算最佳接触平面
 - **姿态评估**：计算足部法向量与重力方向的夹角
 
 #### 3.2.4 双足间距约束检查
@@ -126,10 +126,11 @@
 
 ### 4.1 核心数据结构
 
-- **SqDot**：二维整数坐标点，用于表示地图网格位置
-- **CuDot**：三维浮点坐标点，用于表示空间位置
-- **SqPlain**：二维地图结构，包含地形代价信息
-- **CuPlain**：三维平面结构，用于表示接触平面
+- **SqDot**：二维坐标点，用于表示地图位置
+- **Intex**：二维整数坐标点，用于表示地图网格位置
+- **SqPlane**：二维地图结构，包含地形代价信息
+- **Foot**：足部结构，包含足部位置、朝向和尺寸信息
+- **Robot**：机器人结构，包含双足和运动约束信息
 
 ### 4.2 核心算法模块
 
@@ -153,9 +154,11 @@
 ```
 src/
 ├── aStar/              # A*算法实现
-│   └── aStar.cpp       # A*算法核心实现
-├── csvReader/          # CSV文件读取器
-│   └── reader.cpp      # CSV数据读取实现
+│   ├── aStar.cpp       # A*算法核心实现
+│   └── direction.cpp   # 方向计算实现
+├── csv/                # CSV文件读写
+│   ├── reader.cpp      # CSV数据读取实现
+│   └── writer.cpp      # CSV数据写入实现
 ├── ground/             # 地面处理模块
 │   └── ground.cpp      # 地面数据处理实现
 ├── robot/              # 机器人相关模块
@@ -163,8 +166,11 @@ src/
 │   └── robot.cpp       # 机器人行为实现
 ├── utils/              # 工具模块
 │   ├── geometry.cpp    # 几何计算实现
-│   ├── fast_flatness.cpp # 快速平整度评估实现
-│   └── scale.cpp       # 缩放功能实现
+│   ├── index.cpp       # 索引计算实现
+│   ├── mat.cpp         # 矩阵计算实现
+│   ├── order.cpp       # 序列计算实现
+│   ├── scale.cpp       # 缩放功能实现
+│   └── sequence.cpp    # 序列处理实现
 └── main.cpp            # 主程序入口
 
 ```
@@ -174,9 +180,11 @@ src/
 ```
 include/
 ├── aStar/
-│   └── aStar.hpp       # A*算法头文件
-├── csvReader/
-│   └── reader.hpp      # CSV读取器头文件
+│   ├── aStar.hpp       # A*算法头文件
+│   └── direction.hpp   # 方向计算头文件
+├── csv/
+│   ├── reader.hpp      # CSV读取器头文件
+│   └── writer.hpp      # CSV写入器头文件
 ├── ground/
 │   └── ground.hpp      # 地面处理头文件
 ├── robot/
@@ -184,10 +192,13 @@ include/
 │   └── robot.hpp       # 机器人相关头文件
 ├── utils/
 │   ├── geometry.hpp    # 几何计算头文件
-│   ├── fast_flatness.hpp # 快速平整度评估头文件
+│   ├── index.hpp       # 索引计算头文件
+│   ├── io.hpp          # IO管理头文件
+│   ├── mat.hpp         # 矩阵计算头文件
+│   ├── order.hpp       # 序列计算头文件
 │   ├── scale.hpp       # 缩放功能头文件
-│   ├── test_framework.hpp # 测试框架头文件
-│   └── io.hpp          # IO管理头文件
+│   ├── sequence.hpp    # 序列处理头文件
+│   └── test_framework.hpp # 测试框架头文件
 └── prepare.hpp         # 预处理头文件
 ```
 
@@ -196,9 +207,11 @@ include/
 ```
 tests/
 ├── aStar_test.cpp      # A*算法测试
-├── ground_test.cpp     # 地面处理测试
-├── utils_test.cpp      # 工具模块测试
-├── comparison_test.cpp # 对比测试
+├── constraints_test.cpp # 约束检查测试
+├── direction_test.cpp  # 方向计算测试
+├── main_test.cpp       # 主程序测试
+├── sequence_test.cpp   # 序列处理测试
+├── walk_test.cpp       # 行走算法测试
 └── run_tests.py        # 测试运行脚本
 
 ```
@@ -209,20 +222,20 @@ tests/
 
 ### 6.1 构建步骤
 
-6.1.1. 创建构建目录：
+1. 创建构建目录：
 
    ```bash
    mkdir build
    cd build
    ```
 
-6.1.2. 配置项目：
+2. 配置项目：
 
    ```bash
    cmake ..
    ```
 
-6.1.3. 编译项目：
+3. 编译项目：
 
    ```bash
    make
@@ -234,11 +247,11 @@ tests/
 
 - `trapla`：主程序
 - `aStar_test`：A*算法测试程序
-- `ground_test`：地面处理测试程序
-- `utils_test`：工具模块测试程序
-- `foot_test`：足部相关测试程序
-- `comparison_test`：对比测试程序
 - `constraints_test`：约束条件测试程序
+- `direction_test`：方向计算测试程序
+- `main_test`：主程序测试程序
+- `sequence_test`：序列处理测试程序
+- `walk_test`：行走算法测试程序
 
 ## 7. 运行和测试
 

@@ -11,6 +11,7 @@ enum class WhichFoot;
 #include "robot/foot.hpp"
 #include "utils/geometry.hpp"
 #include "aStar/aStar.hpp"
+#include "aStar/direction.hpp"
 
 /**
  * @brief 足部枚举，表示左脚或右脚
@@ -77,13 +78,9 @@ public:
     Robot(double max_stride=40.0, double max_turn= M_PI * 75.0/180.0, double max_foot_separation=10.0, double min_foot_separation=2.0,
         double foot_length=5.0, double foot_width=3.0);
 
-    
-    /**
-     * @brief 更新行走状态，切换支撑脚和摆动脚
-     */
-    void walk_update();
-
     void walk_update(const SqDot& new_pos);
+
+    void last_walk_update(const SqDot& new_pos);
 
     /**
      * @brief 获取摆动脚的x坐标引用
@@ -151,6 +148,7 @@ public:
      * @return 当前支撑脚的引用
      */
     Foot& get_support_foot();
+    const Foot& get_support_foot() const;
 
     /**
      * @brief 计算到新位置的距离
@@ -207,7 +205,7 @@ public:
      * @param goal 引导点
      * @return 目标落足点
      */
-    SqDot walk_with_guide(const Ground& ground, const SqDot& guide_point);
+    SqDot walk_to(const Ground& ground, const SqDot& guide_point);
 
     SqDot get_target(const SqDot& guide_point);
     
@@ -225,7 +223,14 @@ public:
     SqDot find_target(const SqDot& guide_point);
 
     SqDot little_step();
-    
+
+    /**
+     * @brief 根据引导点选择合适的摆动脚
+     * 
+     * @param first_guide 第一个引导点
+     */
+    void select_swing_foot(const SqDot& first_guide);
+
     /**
      * @brief 查找从当前位置到目标点的路径
      * 
@@ -240,6 +245,14 @@ public:
     SqDot bfs(const Ground& ground, const SqDot& target);
 
     bool reach_target(const SqDot& target);
+
+    double central_angle(const SqDot& dot);
+
+    SqDot guide_bias(const SqDot& dot);
+
+    SqDot arc_guide(const SqDot& dot);
+
+    bool fit_foot(const SqDot& dot);
     
     /**
      * @brief 根据新位置计算足部的下一步状态
@@ -249,7 +262,35 @@ public:
      */
     Foot next(const SqDot& new_pos) const;
 
+    Foot last_next(const SqDot& new_pos) const;
+
+    /**
+     * @brief 检测两脚是否会发生交叉
+     * 
+     * @param left_foot_pos 左脚目标位置
+     * @param right_foot_pos 右脚目标位置
+     * @return 如果会发生交叉返回true，否则返回false
+     */
+    bool will_feet_cross(std::vector<SqDot>& pends);
+
+    /**
+     * @brief 交换左右脚的目标位置以避免交叉
+     * 
+     * @param left_foot_pos 左脚目标位置（会被修改）
+     * @param right_foot_pos 右脚目标位置（会被修改）
+     */
+    void avoid_feet_cross(const Ground& ground, std::vector<SqDot>& pends);
+
     std::vector<SqDot> walk_candidates();
+    
+    void change_feet();
+
+    /**
+     * @brief 根据左右脚倾向生成候选点
+     * 
+     * @return 满足约束条件的候选点列表
+     */
+    std::vector<SqDot> biased_walk_candidates();
 };
 
 #endif

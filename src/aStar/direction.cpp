@@ -1,6 +1,6 @@
 #include "aStar/direction.hpp"
 
-SqDot direction_determine(const SqDot& at, const std::vector<SqDot>& guides) { 
+SqDot direction_determine(const SqDot& at, const std::vector<SqDot>& guides, bool near_end) { 
     SqDot result(0.0, 0.0);
     if (guides.empty()) {
         return result;
@@ -8,9 +8,30 @@ SqDot direction_determine(const SqDot& at, const std::vector<SqDot>& guides) {
     // 在这里更改路径权重
     // 目前在简单测试中,根号pi和根号e的平滑表现比较好
     auto coefficient = geometric_decay(sqrt(M_PI), guides.size());
+    if (near_end) {
+        std::reverse(coefficient.begin(), coefficient.end());
+    }
     for (int order = 0; order < guides.size(); ++order) {
         auto& shift = coefficient[order];
         result += guides[order] * shift;
+    }
+    return result;
+}
+
+SqDot direction_determine(const SqDot& at, const std::vector<Intex>& guides, bool near_end) { 
+    SqDot result(0.0, 0.0);
+    if (guides.empty()) {
+        return result;
+    }
+    // 在这里更改路径权重
+    // 目前在简单测试中,根号pi和根号e的平滑表现比较好
+    auto coefficient = geometric_decay(sqrt(M_PI), guides.size());
+    if (near_end) {
+        std::reverse(coefficient.begin(), coefficient.end());
+    }
+    for (int order = 0; order < guides.size(); ++order) {
+        auto& shift = coefficient[order];
+        result += guides[order].as_dot() * shift;
     }
     return result;
 }

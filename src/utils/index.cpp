@@ -1,6 +1,4 @@
 #include "utils/index.hpp"
-#include <cmath>
-#include <algorithm>
 
 std::size_t IntexHash::operator()(const Intex& index) const { 
     return std::hash<int>()(index.x) ^ std::hash<int>()(index.y);
@@ -71,6 +69,14 @@ std::vector<Intex> Intex::get_neighbour() const {
     return neighbours;
 }
 
+std::vector<Intex> Intex::get_neighbour_shuffled() const {
+    std::vector<Intex> neighbours = get_neighbour();
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(neighbours.begin(), neighbours.end(), g);
+    return neighbours;
+}
+
 /**
  * @brief 获取指定范围内的邻居点
  * 
@@ -88,6 +94,14 @@ std::vector<Intex> Intex::get_neighbour(int x_ceil, int y_ceil) const {
             neighbours.push_back(neighbour);
         }
     }
+    return neighbours;
+}
+
+std::vector<Intex> Intex::get_neighbour_shuffled(int x_ceil, int y_ceil) const {
+    std::vector<Intex> neighbours = get_neighbour(x_ceil, y_ceil);
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(neighbours.begin(), neighbours.end(), g);
     return neighbours;
 }
 

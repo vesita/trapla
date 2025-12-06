@@ -13,7 +13,7 @@ TEST(a_star_search_test) {
     // 0 0 0 0 0
     // 0 1 1 0 0
     // 0 0 0 0 0
-    SqPlain graph(5, 5, 0.0);
+    SqPlane graph(5, 5, 0.0);
     graph[1][1] = std::numeric_limits<double>::infinity(); // 障碍物
     graph[1][2] = std::numeric_limits<double>::infinity(); // 障碍物
     graph[1][3] = std::numeric_limits<double>::infinity(); // 障碍物
@@ -99,7 +99,7 @@ TEST(scale_star_test) {
     // 0 0 0 0 0
     // 0 1 1 0 0
     // 0 0 0 0 0
-    SqPlain graph(5, 5, 0.0);
+    SqPlane graph(5, 5, 0.0);
     graph[1][1] = std::numeric_limits<double>::infinity(); // 障碍物
     graph[1][2] = std::numeric_limits<double>::infinity(); // 障碍物
     graph[1][3] = std::numeric_limits<double>::infinity(); // 障碍物
@@ -155,7 +155,7 @@ TEST(edge_cases_test) {
     // 测试边界情况
     
     // 测试起点和终点相同的情况
-    SqPlain graph2(3, 3, 0.0);
+    SqPlane graph2(3, 3, 0.0);
     Intex same_point(1, 1);
     auto path2 = a_star_search(graph2, same_point, same_point);
     

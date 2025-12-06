@@ -4,10 +4,10 @@
 enum class Cupos;
 struct SqDotHash;
 class SqDot;
-class SqPlain;
+class SqPlane;
 class CuDot;
 class CuLine;
-class CuPlain;
+class CuPlane;
 
 #include <vector>
 #include <array>
@@ -140,6 +140,7 @@ public:
      */
     SqDot central_restore(const double& scale) const;
     
+    SqDot bias(double angle, double distance) const;
     
     /**
      * @brief 判断两个点是否相等
@@ -175,6 +176,7 @@ public:
 
     SqDot operator+=(const SqDot& other);
 
+    
     /**
      * @brief 计算x坐标在缩放后的索引
      * 
@@ -229,6 +231,12 @@ public:
      */
     std::vector<SqDot> get_neighbour() const;
 
+    /**
+     * @brief 获取所有邻居点（乱序）
+     * 
+     * @return 所有邻居点的向量（乱序）
+     */
+    std::vector<SqDot> get_neighbour_shuffled() const;
     
     /**
      * @brief 获取指定范围内的邻居点
@@ -239,6 +247,14 @@ public:
      */
     std::vector<SqDot> get_neighbour(int x_ceil, int y_ceil) const;
 
+    /**
+     * @brief 获取指定范围内的邻居点（乱序）
+     * 
+     * @param x_ceil x方向上限
+     * @param y_ceil y方向上限
+     * @return 指定范围内的邻居点（乱序）
+     */
+    std::vector<SqDot> get_neighbour_shuffled(int x_ceil, int y_ceil) const;
     
     /**
      * @brief 计算到另一个点的距离
@@ -289,7 +305,7 @@ public:
  * @brief 二维平面类
  * 用于表示和操作二维地图数据
  */
-class SqPlain { 
+class SqPlane { 
 public:
     /**
      * @brief 地图数据
@@ -303,7 +319,7 @@ public:
      * 
      * @param map 地图数据
      */
-    SqPlain(std::vector<std::vector<double>> map);
+    SqPlane(std::vector<std::vector<double>> map);
 
     
     /**
@@ -313,13 +329,13 @@ public:
      * @param cols 列数
      * @param value 初始值
      */
-    SqPlain(int rows, int cols, double value=0.0);
+    SqPlane(int rows, int cols, double value=0.0);
 
     
     /**
      * @brief 默认构造函数
      */
-    SqPlain();
+    SqPlane();
 
     
     /**
@@ -355,33 +371,60 @@ public:
     /**
      * @brief 获取指定点的邻居点
      * 
-     * @param point 指定点
-     * @param idx 邻居点索引
-     * @return 邻居点
+     * @param point 原始点
+     * @param idx 方向索引
+     * @return 对应方向的邻居点
      */
     SqDot get_neighbour(const SqDot& point, int idx) const;
 
     Intex get_neighbour(const Intex& point, int idx) const;
-    
+
     /**
-     * @brief 获取指定点的所有邻居点
+     * @brief 获取所有邻居点
      * 
-     * @param point 指定点
-     * @return 所有邻居点
+     * @param point 原始点
+     * @return 邻居点的向量
      */
     std::vector<SqDot> get_neighbour(const SqDot& point) const;
 
+    /**
+     * @brief 获取所有邻居点（乱序）
+     * 
+     * @param point 原始点
+     * @return 邻居点的向量（乱序）
+     */
+    std::vector<SqDot> get_neighbour_shuffled(const SqDot& point) const;
+    
     std::vector<Intex> get_neighbour(const Intex& point) const;
+
+    std::vector<Intex> get_neighbour_shuffled(const Intex& point) const;
     
     /**
-     * @brief 获取指定点的有效邻居点
+     * @brief 获取所有有效的邻居点
      * 
-     * @param point 指定点
-     * @return 有效邻居点
+     * @param point 原始点
+     * @return 有效邻居点的向量
      */
     std::vector<SqDot> get_valid_neighbours(const SqDot& point) const;
+
+    /**
+     * @brief 获取所有有效的邻居点（乱序）
+     * 
+     * @param point 原始点
+     * @return 有效邻居点的向量（乱序）
+     */
+    std::vector<SqDot> get_valid_neighbours_shuffled(const SqDot& point) const;
     
     std::vector<Intex> get_valid_neighbours(const Intex& point) const;
+
+    /**
+     * @brief 获取所有有效的邻居点（乱序）
+     * 
+     * @param point 原始点
+     * @return 有效邻居点的向量（乱序）
+     */
+    std::vector<Intex> get_valid_neighbours_shuffled(const Intex& point) const;
+    
     /**
      * @brief 使用A*算法查找从起点到终点的路径
      * 
@@ -398,7 +441,7 @@ public:
      * @param scale 缩放比例
      * @return 缩放后的地图
      */
-    SqPlain scale_graph(const double& scale) const;
+    SqPlane scale_graph(const double& scale) const;
 
     
     /**
@@ -407,7 +450,7 @@ public:
      * @param scale 缩放比例
      * @return 缩放后的地图方差
      */
-    SqPlain scale_graph_variance(double scale) const;
+    SqPlane scale_graph_variance(double scale) const;
     
     
     /**
@@ -623,7 +666,7 @@ public:
  * @brief 三维平面类
  * 用于表示三维空间中的平面
  */
-class CuPlain {
+class CuPlane {
 public:
     /**
      * @brief 平面方程系数A
@@ -659,16 +702,16 @@ public:
      * @param C 平面方程系数C
      * @param D 平面方程系数D
      */
-    CuPlain(double A=0.0, double B=0.0, double C=0.0, double D=0.0);
+    CuPlane(double A=0.0, double B=0.0, double C=0.0, double D=0.0);
 
     /**
      * @brief 通过三个点构造平面
      * 
      * @param three 三个点的数组
      */
-    CuPlain(const std::array<CuDot, 3>& three);
+    CuPlane(const std::array<CuDot, 3>& three);
     
-    CuPlain(const std::vector<CuDot>& three);
+    CuPlane(const std::vector<CuDot>& three);
     
     
     /**
@@ -677,7 +720,7 @@ public:
      * @param dot 三个点
      * @return 如果定义成功返回true，否则返回false
      */
-    bool define_plain(const std::array<CuDot, 3>& dots);
+    bool define_plane(const std::array<CuDot, 3>& dots);
     
     /**
      * @brief 通过三个点定义平面
@@ -685,7 +728,7 @@ public:
      * @param dot 三个点的向量
      * @return 如果定义成功返回true，否则返回false
      */
-    bool define_plain(const std::vector<CuDot>& dots);
+    bool define_plane(const std::vector<CuDot>& dots);
     
     
     /**
@@ -721,8 +764,10 @@ public:
     double normal_angle() const;
 };
 
-CuPlain up_fit(const CuDot& dot, std::array<CuDot, 3>& three);
+CuPlane up_fit(const CuDot& dot, std::array<CuDot, 3>& three);
 
-CuPlain down_fit(const CuDot& dot, std::array<CuDot, 3>& three);
+CuPlane down_fit(const CuDot& dot, std::array<CuDot, 3>& three);
+
+bool segments_intersect(const SqDot& p1, const SqDot& p2, const SqDot& p3, const SqDot& p4);
 
 #endif

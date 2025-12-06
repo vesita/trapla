@@ -30,8 +30,10 @@ scripts/
 ├── platform/           # 平台特定脚本
 │   └── windows/        # Windows平台脚本
 │       └── run_tests.bat # Windows批处理测试运行脚本
-├── run_tests.py        # 跨平台测试运行脚本
-└── deploy.py           # 跨平台部署脚本
+├── clean_comments.py   # 清理注释脚本
+├── plot_guides.py      # 绘制引导点脚本
+├── plot_path.py        # 绘制路径脚本
+└── run_tests.py        # 跨平台测试运行脚本
 ```
 
 ## 脚本详细说明
@@ -110,7 +112,36 @@ python scripts/transor/jpg2csv.py
 - get-sync.py 用于获取外部数据
 - put-sync.py 用于推送本地数据到外部系统
 
-### 4. 测试运行脚本
+### 4. 可视化脚本
+
+#### plot_guides.py
+
+位置：[scripts/plot_guides.py](../scripts/plot_guides.py)
+
+功能：
+
+- 绘制A*算法生成的引导点
+- 可视化路径规划过程
+
+#### plot_path.py
+
+位置：[scripts/plot_path.py](../scripts/plot_path.py)
+
+功能：
+
+- 绘制最终生成的足部落点路径
+- 可视化机器人行走轨迹
+
+#### clean_comments.py
+
+位置：[scripts/clean_comments.py](../scripts/clean_comments.py)
+
+功能：
+
+- 清理代码中的注释
+- 用于代码压缩或分析
+
+### 5. 测试运行脚本
 
 #### run_tests.py
 
@@ -136,7 +167,7 @@ python scripts/transor/jpg2csv.py
 python scripts/run_tests.py
 ```
 
-### 5. Windows平台测试脚本
+### 6. Windows平台测试脚本
 
 #### run_tests.bat
 

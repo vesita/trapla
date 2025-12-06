@@ -247,8 +247,8 @@ bool Foot::standable(const Ground& ground) {
     }
     
     // 只有当所有点都在地图范围内时才继续检查
-    auto plain = ground.trip(covered_points);
-    auto normal = plain.normal_angle();
+    auto plane = ground.trip(covered_points);
+    auto normal = plane.normal_angle();
     return normal < 20.0/180.0 * M_PI;
 }
 

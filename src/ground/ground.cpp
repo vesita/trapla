@@ -34,8 +34,8 @@ Ground::Ground(int rows, int cols) : map(rows, cols, 0.0) {
  * @return 站立角度（弧度）
  */
 double Ground::stand_angle(std::vector<SqDot> area) const {
-    CuPlain plain = trip(area);
-    return plain.normal_angle();
+    CuPlane plane = trip(area);
+    return plane.normal_angle();
 }
 
 /**
@@ -58,28 +58,28 @@ std::array<int, 2> Ground::shape() const {
  * @param area 区域内的点集合
  * @return 拟合得到的三维平面
  */
-CuPlain Ground::trip(std::vector<SqDot> area) const { 
+CuPlane Ground::trip(std::vector<SqDot> area) const { 
     std::vector<CuDot> dots;
     for (const auto& point : area) {
         if (point.x < 0 || point.x >= map.rows() || point.y < 0 || point.y >= map.cols()) {
-            return CuPlain();
+            return CuPlane();
         }
         dots.emplace_back(CuDot{point.x, point.y, map[point.x][point.y]});
     }
     
     if (dots.size() < 3) {
-        return CuPlain();
+        return CuPlane();
     }
     
     if (dots.size() == 3) {
         std::array<CuDot, 3> results = {dots[0], dots[1], dots[2]};
-        CuPlain plaine(results);
-        return plaine;
+        CuPlane planee(results);
+        return planee;
     }
     
     // 使用前三个点构造初始平面
     std::array<CuDot, 3> three_points = {dots[0], dots[1], dots[2]};
-    CuPlain plane(three_points);
+    CuPlane plane(three_points);
     
     // 使用up_fit优化平面，确保所有点都不在平面之上
     for (const auto& dot : dots) {
@@ -96,8 +96,8 @@ CuPlain Ground::trip(std::vector<SqDot> area) const {
  * @return 区域的法向量
  */
 CuDot Ground::normal(std::vector<SqDot> area) const {
-    CuPlain plain = trip(area);
-    return plain.normal_vector();
+    CuPlane plane = trip(area);
+    return plane.normal_vector();
 }
 
 /**
@@ -108,19 +108,19 @@ CuDot Ground::normal(std::vector<SqDot> area) const {
  * @param area 区域内的点集合
  * @return 拟合得到的三维平面
  */
-CuPlain Ground::convex(std::vector<SqDot> area) const {
+CuPlane Ground::convex(std::vector<SqDot> area) const {
     // 1. 收集区域内所有有效点的三维坐标
     std::vector<CuDot> dots;
     for (const auto& point : area) {
         if (!is_valid(point)) {
-            return CuPlain();
+            return CuPlane();
         }
         dots.emplace_back(CuDot{static_cast<double>(point.x), static_cast<double>(point.y), map[point.x][point.y]});
     }
     
     // 2. 如果点数少于3，无法定义平面
     if (dots.size() < 3) {
-        return CuPlain();
+        return CuPlane();
     }
 
     // 3. 使用Andrew's Monotone Chain算法计算凸包
@@ -179,17 +179,17 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
 
     // 4. 如果凸包点数少于3，无法定义平面
     if (hull.size() < 3) {
-        return CuPlain();
+        return CuPlane();
     }
 
     // 5. 使用凸包中的前三个点初始化平面
     std::array<CuDot, 3> initial_points = {hull[0], hull[1], hull[2]};
-    CuPlain plain;
-    plain.define_plain(initial_points);
+    CuPlane plane;
+    plane.define_plane(initial_points);
 
     // 如果只有3个点，直接返回
     if (hull.size() == 3) {
-        return plain;
+        return plane;
     }
 
     // 6. 迭代优化平面，尝试用剩余的凸包点替换当前平面点以获得更好的拟合
@@ -206,7 +206,7 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
         int best_point_idx = -1;
         
         for (size_t i = 0; i < hull.size(); i++) {
-            double distance = plain.distance(hull[i]);
+            double distance = plane.distance(hull[i]);
             if (distance > max_distance) {
                 max_distance = distance;
                 best_point_idx = static_cast<int>(i);
@@ -227,15 +227,15 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
                     (i == 2) ? hull[best_point_idx] : initial_points[2]
                 };
 
-                CuPlain temp_plain;
-                if (temp_plain.define_plain(temp_points)) {
+                CuPlane temp_plane;
+                if (temp_plane.define_plane(temp_points)) {
                     // 计算原始平面和临时平面的总误差
                     double original_error = 0;
                     double new_error = 0;
 
                     for (const auto& dot : hull) {
-                        original_error += plain.distance(dot);
-                        new_error += temp_plain.distance(dot);
+                        original_error += plane.distance(dot);
+                        new_error += temp_plane.distance(dot);
                     }
                     
                     // 计算改进值
@@ -250,7 +250,7 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
             // 如果找到改进的替换方案，则更新平面
             if (best_replace_idx >= 0) {
                 initial_points[best_replace_idx] = hull[best_point_idx];
-                plain.define_plain(initial_points);
+                plane.define_plane(initial_points);
                 changed = true;
             }
         } else {
@@ -259,7 +259,7 @@ CuPlain Ground::convex(std::vector<SqDot> area) const {
         }
     }
     
-    return plain;
+    return plane;
 }
 
 /**

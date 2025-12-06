@@ -5,7 +5,9 @@
 #include "utils/sequence.hpp"
 
 
-SqDot direction_determine(const SqDot& at, const std::vector<SqDot>& guides);
+SqDot direction_determine(const SqDot& at, const std::vector<SqDot>& guides, bool near_end=false);
+
+SqDot direction_determine(const SqDot& at, const std::vector<Intex>& guides, bool near_end=false);
 
 std::vector<double> geometric_decay (double alpha, int n);
 
