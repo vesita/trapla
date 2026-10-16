@@ -435,6 +435,44 @@ fn test_golden_satisfy_turn() {
     let table = Table::load("satisfy_turn.csv");
     assert_eq!(table.rows.len(), 42);
 
+    // ---- 有意分歧登记（归一化修正）--------------------------------------------
+    // `satisfy_turn` 现在先把差角归一到 (-π, π] 再判开区间（见 robot.rs 的文档注释与
+    // doc/known_divergences.md）。夹具是**冻结的 C++ 行为 oracle**（不做归一化），
+    // 因此下面 3 行会翻转：夹具判 0，归一化后应当判 1。
+    //
+    // 每项：(case, 夹具期望, 手算归一化角 rad, 归一化后期望, 算式说明)
+    // 手算：raw = atan2(new - swing) - support.rz，再 mod 2π 归一到 (-π, π]。
+    //   case 16: raw = -5.969509944433961 rad = -342.0277° ≡ +17.9723° (= 0.3136753627456250 rad)
+    //   case 24: raw = +5.263276023707633 rad = +301.5635° ≡  -58.4365° (= -1.0199092834719540 rad)
+    //   case 26: raw = +5.163075289848182 rad = +295.8224° ≡  -64.1776° (= -1.1201100173314040 rad)
+    // 三例归一化后 |Δ| 都远小于 max_turn=75°，所以是合法小转角，原实现误判为超界。
+    let divergences: [(i32, bool, f64, bool, &str); 3] = [
+        (
+            16,
+            false,
+            0.313675362745625_f64,
+            true,
+            "raw -342.0277° ≡ +17.9723° (mod 360°)",
+        ),
+        (
+            24,
+            false,
+            -1.019909283471954_f64,
+            true,
+            "raw +301.5635° ≡ -58.4365° (mod 360°)",
+        ),
+        (
+            26,
+            false,
+            -1.120110017331404_f64,
+            true,
+            "raw +295.8224° ≡ -64.1776° (mod 360°)",
+        ),
+    ];
+
+    let mut conformant = 0_usize;
+    let mut divergent = 0_usize;
+
     for (row_idx, row) in table.rows.iter().enumerate() {
         let swx = table.num(row, "swx");
         let swy = table.num(row, "swy");
@@ -445,7 +483,8 @@ fn test_golden_satisfy_turn() {
         let max_turn = table.num(row, "max_turn");
         let newx = table.num(row, "newx");
         let newy = table.num(row, "newy");
-        let want_res = table.int(row, "result") == 1;
+        let want_res_fixture = table.int(row, "result") == 1;
+        let case_id = table.int(row, "case");
 
         let shape = FootShape::biped();
         let cfg = RobotConfig {
@@ -464,12 +503,169 @@ fn test_golden_satisfy_turn() {
 
         let new_pos = Dot::new(newx, newy);
         let got_res = robot.satisfy_turn(new_pos);
-        assert_eq!(
-            got_res, want_res,
-            "satisfy_turn.csv row {row_idx} (case {}) 结果不匹配",
-            table.int(row, "case")
-        );
+
+        if let Some((_, fixture_expected, hand_angle, normalized_expected, formula)) =
+            divergences.iter().find(|d| d.0 == case_id)
+        {
+            assert!(
+                !fixture_expected,
+                "satisfy_turn.csv case {case_id} 的夹具期望值不再是 0；分歧登记已过期，请复核"
+            );
+            // 用夹具输入重算 raw，再与手算常数比对（不是拿实现当 oracle）
+            let raw_angle = robot.swing_foot().position.angle(new_pos) - robot.support_foot().rz;
+            assert_close(
+                metrics::wrap_angle(raw_angle),
+                *hand_angle,
+                1e-12,
+                &format!("satisfy_turn.csv case {case_id} 归一化角手算 ({formula})"),
+            );
+            assert_eq!(
+                got_res, *normalized_expected,
+                "satisfy_turn.csv case {case_id} 有意分歧行判定不符：{formula}"
+            );
+            divergent += 1;
+        } else {
+            assert_eq!(
+                got_res, want_res_fixture,
+                "satisfy_turn.csv row {row_idx} (case {case_id}) 结果不匹配"
+            );
+            conformant += 1;
+        }
     }
+
+    assert_eq!(divergent, 3, "有意分歧行数应为 3");
+    assert_eq!(conformant, 39, "照夹具断言的合规行数应为 39");
+}
+
+/// 归一化修正的边界守卫：支撑脚朝向接近 ±π 时，跨 ±π 的候选方向必须按同一圈内的差角判定。
+///
+/// 每例都给出「未归一化的 raw」与「归一化后的 Δ」两个量：去掉归一化时，下面标
+/// `raw 跨圈` 的几条会因为 raw ≈ ±348° 而被拒，测试即变红。
+#[test]
+fn test_satisfy_turn_wrap_boundary() {
+    let cfg = RobotConfig::default();
+    let d = 20.0;
+
+    let robot_with_support_rz = |sup_rz: f64| {
+        let mut r = Robot::new(cfg, Dot::new(0.0, 0.0));
+        r.swing_foot_mut().position = Dot::new(0.0, 0.0);
+        r.swing_foot_mut().rz = 0.0;
+        r.support_foot_mut().position = Dot::new(0.0, 5.0);
+        r.support_foot_mut().rz = sup_rz;
+        r
+    };
+    let dir = |deg: f64| Dot::new(d * deg.to_radians().cos(), d * deg.to_radians().sin());
+    let raw = |r: &Robot, p: Dot| r.swing_foot().position.angle(p) - r.support_foot().rz;
+
+    // 1) support +178°，方向 +170°：raw = -8°，同侧小角（不需要跨圈）
+    let r = robot_with_support_rz(178.0_f64.to_radians());
+    let p = dir(170.0);
+    assert_close(
+        metrics::wrap_angle(raw(&r, p)),
+        (-8.0_f64).to_radians(),
+        1e-12,
+        "case1 归一化角",
+    );
+    assert!(r.satisfy_turn(p), "case1: |Δ|=8° 应通过");
+
+    // 2) support -178°，方向 -170°：raw = +8°
+    let r = robot_with_support_rz((-178.0_f64).to_radians());
+    let p = dir(-170.0);
+    assert_close(
+        metrics::wrap_angle(raw(&r, p)),
+        (8.0_f64).to_radians(),
+        1e-12,
+        "case2 归一化角",
+    );
+    assert!(r.satisfy_turn(p), "case2: |Δ|=8° 应通过");
+
+    // 3) support +178°，方向 -170°：raw = -348°（跨圈），归一化 = +12°
+    let r = robot_with_support_rz(178.0_f64.to_radians());
+    let p = dir(-170.0);
+    assert!(
+        raw(&r, p).to_degrees() < -300.0,
+        "case3 前提：未归一化 raw 应落在 -348° 量级，实得 {}°",
+        raw(&r, p).to_degrees()
+    );
+    assert_close(
+        metrics::wrap_angle(raw(&r, p)),
+        (12.0_f64).to_radians(),
+        1e-12,
+        "case3 归一化角",
+    );
+    assert!(
+        r.satisfy_turn(p),
+        "case3: raw -348° 跨圈，归一化后 +12° 应通过（去掉归一化时此条变红）"
+    );
+
+    // 4) support -178°，方向 +170°：raw = +348°（跨圈），归一化 = -12°
+    let r = robot_with_support_rz((-178.0_f64).to_radians());
+    let p = dir(170.0);
+    assert!(
+        raw(&r, p).to_degrees() > 300.0,
+        "case4 前提：未归一化 raw 应落在 +348° 量级，实得 {}°",
+        raw(&r, p).to_degrees()
+    );
+    assert_close(
+        metrics::wrap_angle(raw(&r, p)),
+        (-12.0_f64).to_radians(),
+        1e-12,
+        "case4 归一化角",
+    );
+    assert!(
+        r.satisfy_turn(p),
+        "case4: raw +348° 跨圈，归一化后 -12° 应通过（去掉归一化时此条变红）"
+    );
+
+    // 5) 原 golden 夹具 case 16 的姿态与落点：
+    //    suprz=2.9462609887601943 rad，raw = -342.0277°，归一化 = +17.9723°
+    let mut r = Robot::new(cfg, Dot::new(0.0, 0.0));
+    r.swing_foot_mut().position = Dot::new(56.7851, 39.7649);
+    r.support_foot_mut().position = Dot::new(71.7696, 40.3365);
+    r.support_foot_mut().rz = 2.9462609887601943;
+    let p = Dot::new(24.377, 35.9116);
+    assert_close(
+        metrics::wrap_angle(raw(&r, p)),
+        0.313675362745625,
+        1e-12,
+        "case5 (夹具 case 16) 归一化角",
+    );
+    assert!(
+        r.satisfy_turn(p),
+        "case5: 夹具 case 16 归一化后应通过（去掉归一化时此条变红）"
+    );
+
+    // 6) 归一化后仍超开区间上界：support +178°、方向 -100° → raw -278° → 归一化 +82° > 75°
+    let r = robot_with_support_rz(178.0_f64.to_radians());
+    let p = dir(-100.0);
+    assert_close(
+        metrics::wrap_angle(raw(&r, p)),
+        (82.0_f64).to_radians(),
+        1e-12,
+        "case6 归一化角",
+    );
+    assert!(
+        !r.satisfy_turn(p),
+        "case6: 归一化后 +82° 超过 75°，仍应被拒（语义保持严格开区间）"
+    );
+
+    // 7) 归一化后仍保持严格开区间：+74.999° 通过、+75.001° 失败
+    //    （不取恰好 +75°：那一点依赖 libm 的最后一个 ulp，方向构造会引入 ~2e-16 的不可控符号）
+    let r = robot_with_support_rz(178.0_f64.to_radians());
+    let p_inside = dir(178.0 + 74.999 - 360.0); // 方向 -107.001° → raw -285.001° → 归一化 +74.999°
+    assert_close(
+        metrics::wrap_angle(raw(&r, p_inside)),
+        74.999_f64.to_radians(),
+        1e-12,
+        "case7 inside 归一化角",
+    );
+    assert!(r.satisfy_turn(p_inside), "case7: 归一化后 +74.999° 应通过");
+
+    let p_outside = dir(178.0 + 75.001 - 360.0); // 归一化 +75.001°
+    assert!(
+        !r.satisfy_turn(p_outside),
+        "case7: 归一化后 +75.001° 应被拒（语义保持严格开区间）"
+    );
 }
 
 // ---------------------------------------------------------------- 要求单测覆盖

@@ -14,6 +14,19 @@ pub enum WhichFoot {
     Right,
 }
 
+/// 通道半宽（cm）：左右脚各自沿「本体前进方向」的垂线偏移该值落足（路线 D：足印分道）。
+///
+/// 物理含义 = 目标双足横向间距的一半。`Robot::new` 的初始双足间距是
+/// `0.6 * min_separation + 0.4 * max_separation = 5.2`；走廊（`satisfy_spacing`）在足轴与
+/// 支撑脚平行时把足中心侧距限制在 `[5, 13]`，因此本参数的有效上限 ≈ 13。
+/// 取值依据与三取值敏感性见 `doc/catwalk_design.md`。
+const LANE_HALF_WIDTH_CM: f64 = 13.0;
+
+/// 朝向平滑系数（路线 B）：`next()` 把新脚朝向按此比例拉向本步步向，1.0 = 原行为。
+///
+/// 物理含义 = 一步最多把足朝向拉向实际步向几成；取值依据与敏感性见 `doc/catwalk_design.md`。
+const HEADING_SMOOTHING: f64 = 0.5;
+
 /// 双足机器人状态。
 #[derive(Debug, Clone)]
 pub struct Robot {
@@ -131,6 +144,9 @@ impl Robot {
     /// 根据新位置计算摆动脚的下一步状态（原 `Robot::next`，`src/robot/robot.cpp:635-646`）。
     ///
     /// 步长 >= `active_distance` 才更新 `rz`，否则保持原朝向。
+    ///
+    /// **语义被 golden 钉死**：`satisfy_spacing`/`satisfy_turn` 内部都调用本函数做几何判定，
+    /// 所以这里保持原实现不动。路线 B 的朝向解耦在提交路径 [`Robot::next_committed`] 里做。
     pub fn next(&self, new_pos: Dot) -> Foot {
         let sw = self.swing_foot();
         let stride = sw.position.distance(new_pos);
@@ -142,9 +158,29 @@ impl Robot {
         Foot::new(new_pos, new_rz, sw.shape)
     }
 
+    /// 提交落足时使用的脚状态（路线 B：朝向解耦）。
+    ///
+    /// 与 [`Robot::next`] 的唯一差别是 `rz`：不再直接等于步向，而是按 `HEADING_SMOOTHING`
+    /// 向步向插值。原实现里「步向 = 新脚朝向」是 T6 负结果里参考系自转的源头——步向带着
+    /// π/12 网格抖动，抖动又被写进 `rz`，下一轮候选窗口就以它为参考。物理含义是
+    /// 「一步最多把足朝向拉向实际步向几成」；平滑系数 1.0 = 原行为。敏感性见
+    /// `doc/catwalk_design.md`。
+    fn next_committed(&self, new_pos: Dot) -> Foot {
+        let sw = self.swing_foot();
+        let stride = sw.position.distance(new_pos);
+        let new_rz = if stride >= self.config.active_distance {
+            let step_dir = sw.position.angle(new_pos);
+            let delta = crate::metrics::wrap_angle(step_dir - sw.rz);
+            sw.rz + delta * HEADING_SMOOTHING
+        } else {
+            sw.rz
+        };
+        Foot::new(new_pos, new_rz, sw.shape)
+    }
+
     /// 移动摆动脚到新位置，并切换当前活动的脚。
     pub fn walk_update(&mut self, new_pos: Dot) {
-        let next_foot = self.next(new_pos);
+        let next_foot = self.next_committed(new_pos);
         *self.swing_foot_mut() = next_foot;
         self.change_feet();
     }
@@ -159,8 +195,20 @@ impl Robot {
     /// 检查新位置是否满足转角约束（原 `satisfy_turn`，`src/robot/robot.cpp:232-235`）。
     ///
     /// 严格开区间：`-max_turn < angle < max_turn`。
+    ///
+    /// 【有意修正】原 C++ 直接拿 `atan2` 差值去比 `max_turn`，**不做角度归一化**：
+    /// `support.rz ≈ ±π` 时朝另一侧的候选方向会被 `atan2` 折回，差值变成 ±2π 量级的
+    /// 伪大角（实测 raw −342.03°），于是本应合法的小转角候选被拒；候选集被清空后
+    /// `find_target` 返回 [`CoreError::NoPath`]，整条规划以 `exit=2` 失败。
+    /// 此处先用 [`crate::metrics::wrap_angle`] 把差值归一到 `(-π, π]` 再判开区间
+    /// （语义仍是「严格开区间」，只是把差角换算到同一圈内）。
+    ///
+    /// 该项与冻结夹具 `tests/golden/satisfy_turn.csv` 的 case 16/24/26 三行有意分歧，
+    /// 逐行手算与理由见 `doc/known_divergences.md` 与 `tests/robot_golden.rs`。
     pub fn satisfy_turn(&self, new_pos: Dot) -> bool {
-        let angle = self.swing_foot().position.angle(new_pos) - self.support_foot().rz;
+        let angle = crate::metrics::wrap_angle(
+            self.swing_foot().position.angle(new_pos) - self.support_foot().rz,
+        );
         angle < self.config.max_turn && angle > -self.config.max_turn
     }
 
@@ -361,6 +409,31 @@ impl Robot {
         }
     }
 
+    /// 本脚通道上的瞄准点（路线 D：足印分道）。
+    ///
+    /// 把引导点沿**前进方向**（本体中心 → 引导点）的垂线偏移半个通道宽，左右脚各偏一侧：
+    /// `feet[0]`(Left) 偏 −y 侧、`feet[1]`(Right) 偏 +y 侧，与 [`Robot::new`] 的初始布置一致。
+    ///
+    /// 参考系是**前进方向**，不是任何一只脚的朝向——T6 的负结果里 `guide_bias` 用的是
+    /// 双足平均朝向（`central_angle`），朝向本身在抖，偏移量也跟着抖；这里换成引导方向后
+    /// 偏移量只随路径转向变化。
+    pub fn lane_aim(&self, guide: Dot) -> Dot {
+        let center = self.position();
+        let dx = guide.x() - center.x();
+        let dy = guide.y() - center.y();
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 1e-9 {
+            return guide;
+        }
+        let (ux, uy) = (dx / dist, dy / dist);
+        let side = match self.now_which_foot_to_move {
+            WhichFoot::Left => -1.0,
+            WhichFoot::Right => 1.0,
+        };
+        let offset = side * LANE_HALF_WIDTH_CM;
+        Dot::new(guide.x() - uy * offset, guide.y() + ux * offset)
+    }
+
     /// 双脚轨迹是否会交叉（原 `will_feet_cross`，`src/robot/robot.cpp:578-591`）。
     pub fn will_feet_cross(&self, pends: &[Dot]) -> bool {
         if pends.len() < 2 {
@@ -432,7 +505,9 @@ impl Robot {
                 guide = crate::astar::direction_determine(&guides, true);
             }
 
-            let next_step = self.walk_to(t, guide)?;
+            // 路线 D：瞄准点沿前进方向的垂线偏移到本脚通道，而不是直接瞄引导点。
+            let aim = self.lane_aim(guide);
+            let next_step = self.walk_to(t, aim)?;
             pend_dots.push(next_step);
             cursor = (cursor + 1) % 2;
             let waiting = cursor == 0;
