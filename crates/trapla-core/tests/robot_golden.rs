@@ -234,6 +234,11 @@ fn test_golden_cover() {
 
 #[test]
 fn test_golden_standable() {
+    // 只断言布尔 `standable`，**有意不读**夹具 `standable.csv` 的 `normal_angle` 列：
+    // 该列由 C++ `Foot::cover()` 的 `unordered_set` 迭代序（未指定）经顺序敏感的 `up_fit`
+    // 贪心产生 —— 同一组覆盖点换个迭代顺序就可能是另一个法向角，因此它**不是可复现的 oracle**。
+    // 本仓的 `cover()` 用确定顺序；45 行的布尔判定与夹具 45/45 一致，语义输出不受影响。
+    // 裁决见 `doc/known_divergences.md` D5：夹具一个字节不改，该列退休（retired）。
     let table = Table::load("standable.csv");
     assert_eq!(table.rows.len(), 45);
     let grounds = load_grounds();
@@ -261,7 +266,8 @@ fn test_golden_standable() {
         let got_standable = foot.standable(&terrain);
 
         assert_eq!(
-            got_standable, want_standable,
+            got_standable,
+            want_standable,
             "standable.csv row {row_idx} (case {}) 判定不匹配",
             table.int(row, "case")
         );
@@ -372,7 +378,8 @@ fn test_golden_satisfy_spacing() {
         let got_res = robot.satisfy_spacing(new_pos);
 
         assert_eq!(
-            got_res, want_res,
+            got_res,
+            want_res,
             "satisfy_spacing.csv row {row_idx} (case {}) 判定不匹配: new=({newx}, {newy})",
             table.int(row, "case")
         );
@@ -415,7 +422,8 @@ fn test_golden_satisfy_stride() {
         let new_pos = Dot::new(newx, newy);
         let got_res = robot.satisfy_stride(new_pos);
         assert_eq!(
-            got_res, want_res,
+            got_res,
+            want_res,
             "satisfy_stride.csv row {row_idx} (case {}) 结果不匹配",
             table.int(row, "case")
         );
@@ -739,7 +747,12 @@ fn test_satisfy_spacing_11_cases_and_6_boundaries() {
     // 实现判定：spacing = 2.0 在 [2.0 - 1e-3, 10.0 + 1e-3] 闭区间内，返回 true。
     // 文档要求严格开区间 spacing > 2.0，原 C++ 测试期望 false，此处按实现对齐为 true。
     let original_11_cases = [
-        (Dot::new(50.0, 55.0), true, false, "用例 0: 文档要求严格开区间(期望false)，此处按实现对齐(期望true)"),
+        (
+            Dot::new(50.0, 55.0),
+            true,
+            false,
+            "用例 0: 文档要求严格开区间(期望false)，此处按实现对齐(期望true)",
+        ),
         (Dot::new(50.0, 58.0), true, true, "用例 1"),
         (Dot::new(50.0, 52.0), false, false, "用例 2"),
         (Dot::new(50.0, 60.0), true, true, "用例 3"),
@@ -883,7 +896,10 @@ fn test_metrics_full() {
     let p1 = [Dot::new(0.0, 0.0)];
     let m1 = metrics::compute(&p1, goal);
     assert_eq!(m1.steps, 1);
-    assert_relative_eq!(m1.goal_error, (100.0_f64.powi(2) + 100.0_f64.powi(2)).sqrt());
+    assert_relative_eq!(
+        m1.goal_error,
+        (100.0_f64.powi(2) + 100.0_f64.powi(2)).sqrt()
+    );
     assert!(m1.stride.is_empty());
     assert!(m1.turn_angle.is_empty());
     assert!(m1.same_foot_turn.is_empty());
@@ -900,11 +916,7 @@ fn test_metrics_full() {
     assert!(m2.same_foot_turn.is_empty());
 
     // n=3
-    let p3 = [
-        Dot::new(0.0, 0.0),
-        Dot::new(10.0, 0.0),
-        Dot::new(20.0, 0.0),
-    ];
+    let p3 = [Dot::new(0.0, 0.0), Dot::new(10.0, 0.0), Dot::new(20.0, 0.0)];
     let m3 = metrics::compute(&p3, goal);
     assert_eq!(m3.steps, 3);
     assert_eq!(m3.stride.len(), 2);
@@ -953,18 +965,22 @@ fn test_metrics_full() {
 
     // wrap_angle 跨越测试
     let l0 = Dot::new(0.0, 0.0);
-    let l1 = Dot::new(l0.x() + (170.0_f64.to_radians()).cos(), l0.y() + (170.0_f64.to_radians()).sin());
-    let l2 = Dot::new(l1.x() + (-170.0_f64.to_radians()).cos(), l1.y() + (-170.0_f64.to_radians()).sin());
-    let path_wrap = [
-        l0,
-        Dot::new(0.0, 1.0),
-        l1,
-        Dot::new(1.0, 1.0),
-        l2,
-    ];
+    let l1 = Dot::new(
+        l0.x() + (170.0_f64.to_radians()).cos(),
+        l0.y() + (170.0_f64.to_radians()).sin(),
+    );
+    let l2 = Dot::new(
+        l1.x() + (-170.0_f64.to_radians()).cos(),
+        l1.y() + (-170.0_f64.to_radians()).sin(),
+    );
+    let path_wrap = [l0, Dot::new(0.0, 1.0), l1, Dot::new(1.0, 1.0), l2];
     let m_wrap = metrics::compute(&path_wrap, goal);
     assert_eq!(m_wrap.same_foot_turn.len(), 1);
-    assert_relative_eq!(m_wrap.same_foot_turn[0], 20.0_f64.to_radians(), epsilon = 1e-9);
+    assert_relative_eq!(
+        m_wrap.same_foot_turn[0],
+        20.0_f64.to_radians(),
+        epsilon = 1e-9
+    );
 }
 
 #[test]

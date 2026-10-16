@@ -20,7 +20,7 @@ use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 /// 退出码：成功。
 pub(crate) const EXIT_OK: u8 = 0;
-/// 退出码：输入文件不可读或格式错（也含命令行参数错误）。
+/// 退出码：输入文件不可读、格式错或坐标越界（也含命令行参数错误）。
 pub(crate) const EXIT_INPUT: u8 = 1;
 /// 退出码：规划失败（无路径）。
 pub(crate) const EXIT_NO_PATH: u8 = 2;
@@ -35,7 +35,7 @@ fn exit_code_table() -> String {
     format!(
         "退出码:\n  \
          {EXIT_OK} 成功\n  \
-         {EXIT_INPUT} 输入文件不可读或格式错（参数错误同此码）\n  \
+         {EXIT_INPUT} 输入文件不可读、格式错或坐标越界（参数错误同此码）\n  \
          {EXIT_NO_PATH} 规划失败（无路径）\n  \
          {EXIT_INTERNAL} 其它内部错误"
     )

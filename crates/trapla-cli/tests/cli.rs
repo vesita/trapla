@@ -169,3 +169,119 @@ fn analyze_missing_path_exits_1() {
     assert_eq!(code(&output), 1, "缺路径应退 1");
     assert!(stderr(&output).contains("错误"), "要在 stderr 说明");
 }
+
+/// 仓库里的真实地图（1000 行 × 3000 列）。
+fn real_map() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/csv/map.csv")
+}
+
+#[test]
+fn plan_out_of_bounds_goal_exits_1() {
+    let dir = tmp_dir("oob_goal");
+    let out = dir.join("out.csv");
+    let map = real_map();
+
+    let output = trapla(&[
+        "plan",
+        "--map",
+        map.to_str().expect("utf8 路径"),
+        "--start",
+        "0,0",
+        "--goal",
+        "1500,1500",
+        "--out",
+        out.to_str().expect("utf8 路径"),
+        "--seed",
+        "0",
+    ]);
+
+    assert_eq!(
+        code(&output),
+        1,
+        "越界目标点是输入错，应退 1 而不是 2：{}",
+        stderr(&output)
+    );
+    let err = stderr(&output);
+    assert!(
+        err.contains("目标点 (1500.000000,1500.000000)"),
+        "stderr 要给出实际值：{err}"
+    );
+    assert!(err.contains("超出地图范围"), "stderr 要说明越界：{err}");
+}
+
+#[test]
+fn plan_out_of_bounds_start_exits_1() {
+    let dir = tmp_dir("oob_start");
+    let out = dir.join("out.csv");
+    let map = real_map();
+
+    let output = trapla(&[
+        "plan",
+        "--map",
+        map.to_str().expect("utf8 路径"),
+        "--start",
+        "5000,0",
+        "--goal",
+        "10,10",
+        "--out",
+        out.to_str().expect("utf8 路径"),
+        "--seed",
+        "0",
+    ]);
+
+    assert_eq!(
+        code(&output),
+        1,
+        "越界起点是输入错，应退 1：{}",
+        stderr(&output)
+    );
+    assert!(
+        stderr(&output).contains("起点 (5000.000000,0.000000)"),
+        "stderr 要给出实际值：{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn plan_in_map_unreachable_exits_2() {
+    let dir = tmp_dir("unreachable");
+    let map = dir.join("wall.csv");
+    // 400×400 全 1，列 200..220 整列 `inf`：20 列宽的墙横贯全图。
+    // 聚合后至少一整个粗网格列成为障碍 ⇒ 分居两侧的起点/目标无路径；
+    // 但 `--goal 350,350` 在 400×400 图内（不是越界），所以必须仍是 exit=2。
+    let mut text = String::new();
+    for _ in 0..400 {
+        for j in 0..400 {
+            text.push_str(if (200..220).contains(&j) { "inf" } else { "1" });
+            text.push(if j == 399 { '\n' } else { ',' });
+        }
+    }
+    std::fs::write(&map, text).expect("写墙地图");
+
+    let out = dir.join("out.csv");
+    let output = trapla(&[
+        "plan",
+        "--map",
+        map.to_str().expect("utf8 路径"),
+        "--start",
+        "0,0",
+        "--goal",
+        "350,350",
+        "--out",
+        out.to_str().expect("utf8 路径"),
+        "--seed",
+        "0",
+    ]);
+
+    assert_eq!(
+        code(&output),
+        2,
+        "图内确实不可达应仍是 2：{}",
+        stderr(&output)
+    );
+    assert!(
+        stderr(&output).contains("无路径"),
+        "要报无路径：{}",
+        stderr(&output)
+    );
+}

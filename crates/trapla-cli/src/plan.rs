@@ -36,10 +36,20 @@ pub fn run(args: &PlanArgs) -> ExitCode {
         }
     };
     eprintln!("地图已读入: {} 行 x {} 列", grid.rows(), grid.cols());
-    let terrain = Terrain::from_grid(grid);
 
+    // 坐标越界是**输入错**（退 1），不是「无路径」（退 2）。边界判定用 `Grid::in_bounds`
+    // 与 `Dot::as_idx`（四舍五入成 `Idx`，x 是行、y 是列），与规划器取 `start_idx/goal_idx`
+    // 的方式同源，不另立一套范围判定。
     let start = Dot::new(args.start.x, args.start.y);
     let goal = Dot::new(args.goal.x, args.goal.y);
+    for (label, dot) in [("起点", start), ("目标点", goal)] {
+        if let Some(error) = out_of_map_message(&grid, label, dot) {
+            eprintln!("错误: {error}");
+            return ExitCode::from(EXIT_INPUT);
+        }
+    }
+
+    let terrain = Terrain::from_grid(grid);
     let config = RobotConfig::default();
 
     let started = Instant::now();
@@ -128,4 +138,17 @@ fn metrics_json(runs: &[Run]) -> Result<serde_json::Value, serde_json::Error> {
         items.push(item);
     }
     Ok(serde_json::Value::Array(items))
+}
+
+/// 坐标落在图外（或不是有限数）时返回给用户看的说明；在图内返回 `None`。
+fn out_of_map_message(grid: &trapla_core::grid::Grid, label: &str, dot: Dot) -> Option<String> {
+    let (x, y) = (dot.x(), dot.y());
+    if x.is_finite() && y.is_finite() && grid.in_bounds(dot.as_idx()) {
+        return None;
+    }
+    Some(format!(
+        "{label} ({x:.6},{y:.6}) 超出地图范围（{} 行 × {} 列）",
+        grid.rows(),
+        grid.cols()
+    ))
 }
