@@ -1,0 +1,9 @@
+[package]
+name = "trapla-io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "trapla 的 CSV 读写（map.csv / path_result.csv）"
+
+[dependencies]
+trapla-core.workspace = true

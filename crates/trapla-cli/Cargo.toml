@@ -1,0 +1,16 @@
+[package]
+name = "trapla-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "trapla 命令行入口"
+
+[[bin]]
+name = "trapla"
+path = "src/main.rs"
+
+[dependencies]
+trapla-core.workspace = true
+trapla-io.workspace = true
+clap.workspace = true
+serde_json.workspace = true

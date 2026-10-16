@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+# viz 不在 default-members 里：默认构建/检查不拉起可视化前端。
+default-members = ["crates/trapla-core", "crates/trapla-io", "crates/trapla-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+
+[workspace.dependencies]
+trapla-core = { path = "crates/trapla-core" }
+trapla-io = { path = "crates/trapla-io" }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

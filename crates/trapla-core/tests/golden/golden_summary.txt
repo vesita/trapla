@@ -2,6 +2,7 @@ grounds.csv rows=387
 normal_angle.csv rows=45
 up_fit.csv rows=45
 trip.csv rows=45
+note: trip.csv 的 define_extend 列因是未初始化变量（CuPlane 的 array 构造不初始化该字段），已于 2026-10-16 删除
 cover.csv cases=40 rows=1072
 corner.csv rows=40
 standable.csv rows=45

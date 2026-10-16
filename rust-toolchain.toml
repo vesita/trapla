@@ -1,0 +1,5 @@
+[toolchain]
+# 本仓只跑稳定版：实测本机 stable = cargo 1.99.0（cargo 1.99.0 (5f94df478 2026-08-27)）。
+# 具名版本号不写进 channel —— 本机没有装 `1.99.0-x86_64-unknown-linux-gnu` 这条具名工具链，
+# 写了会触发 rustup 下载。最低版本要求由 Cargo.toml 的 `rust-version = "1.99"` 表达。
+channel = "stable"

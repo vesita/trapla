@@ -1,0 +1,14 @@
+[package]
+name = "trapla-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "trapla 核心：几何 / 栅格 / 地形 / 足部 / A* / 规划 / 指标"
+
+[dependencies]
+glam = { version = "0.34.1", features = ["serde"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+approx = "0.5.1"
