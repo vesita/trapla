@@ -1,393 +1,146 @@
-# 双足机器人在线落足点规划项目说明
+# 双足机器人在线落足点规划：项目说明
+
+本文写**系统需求、对象与约束、算法设计**。Rust 模块划分、数据流与有意分歧索引见
+`doc/architecture.md`；命令与测试怎么跑见 `readme.md`；问题的建模推导见 `doc/problem_flow.md`。
 
 ## 1. 项目概述
 
-双足机器人在不平坦的路面上运动时，其双足交替移动会受到多种因素的制约，包括步长、足平面法向量方向与重力方向夹角、观测范围、实际落足点与规划落足点的偏差等。本项目旨在解决给定起点和终点位置的情况下，如何在线规划落足点位置的问题。
+双足机器人在不平坦路面上交替迈步时，落足点受步长、足平面姿态、双足间距、转向角等因素制约。
+本项目的目标：给定地形图与起点、终点，**在线**规划出一条满足全部约束的落足点序列。
 
 ## 2. 系统需求
 
 ### 2.1 输入条件
 
-- **三维地形图**：提供机器人运动环境的三维地形信息
-- **足尺寸**：3×5（单位：cm）
-- **步长限制**：最大值40（单位：cm）
-- **双足间距**：大于2且小于10（单位：cm）
-- **观测范围**：运动方向前方200×200区域（单位：cm）
-- **最大转向角**：小于±75°
-- **足平面法向量与重力方向夹角**：小于±20°
-- **起点和终点的投影坐标**：在二维平面上的起始和目标位置
+| 输入 | 取值 / 形式 |
+|---|---|
+| 三维地形图 | 灰度高度图导出的 CSV（无表头，x=行、y=列，值域 0–255 cm），`data/csv/map.csv` 为 1000×3000 |
+| 足尺寸 | 3×5 cm（半宽 1.5、半长 2.5），采样步长 0.5 |
+| 步长 | 严格小于 40 cm |
+| 双足间距 | 2–10 cm（几何口径见 §3.2.4） |
+| 最大转向角 | 严格小于 ±75° |
+| 足平面法线与重力夹角 | 严格小于 ±20° |
+| 起点 / 终点 | 二维投影坐标 `(x, y)`，须落在地图内（越界报输入错 `exit=1`） |
+| 随机种子 | `--seed`，决定缩放图 A* 的邻居洗牌顺序 |
+
+观测范围（运动方向前方 200×200）与「实际落足点偏差」属于在线运行时的假设，
+规划器按「已知完整地形」离线规划，不建模观测噪声。
 
 ### 2.2 输出要求
 
-1. **双足落足点序列**：
-   - 足中心位置坐标
-   - 足平面法向量方向与重力方向夹角
-   - 支持可视化展示
-
-2. **轨迹长度**：
-   - 计算并输出整个运动轨迹的总长度
-
-3. **转向角曲线**：
-   - 绘制机器人在运动过程中的转向角变化曲线
-
-4. **足平面法向量方向与重力方向夹角曲线**：
-   - 绘制足平面法向量方向与重力方向夹角的变化曲线
-
-5. **实验数据分析和安全性分析**：
-   - 对实验数据进行统计分析
-   - 评估路径的安全性，包括稳定性、可行性等指标
+1. **双足落足点序列**：足中心位置坐标（`--out` 的 CSV，表头 `x,y`，6 位小数），偶数下标为左脚。
+2. **猫步指标 JSON**（`--metrics`）：步数、总长、终点误差、跨距/转角/间距序列、折线交叉数等
+   （定义见 `crates/trapla-core/src/metrics.rs`，字段即口径）。
+3. **可视化回放**：`trapla-viz` 在地形上回放落足点与指标面板。
+4. **可复现性**：同一 `--seed` 两次运行的输出逐字节相同。
 
 ## 3. 系统设计
 
 ### 3.1 对象特征及约束
 
-#### 3.1.1 双足机器人 (Bipedal Robot)
+#### 3.1.1 双足机器人
 
-**属性**：
+- 足为 3×5 cm 的矩形；足位姿 = 中心点 `(x, y)` + 朝向 `rz`。
+- 约束：步长 < 40；双足间距 2–10；转向角（新朝向与支撑脚朝向之差，**先归一到 (-π, π]**）< ±75°；
+  足平面法线与重力夹角 < ±20°。
+- 全部阈值的唯一事实源是 `crates/trapla-core/src/config.rs`。
 
-- 足尺寸：3×5 cm
-- 步长：最大值40 cm
-- 双足间距：大于2 cm且小于10 cm
-- 观测范围：运动方向前方200×200 cm区域
-- 最大转向角：小于±75°
-- 足平面法向量与重力方向夹角：小于±20°
+#### 3.1.2 环境地形
 
-**约束条件**：
+- 离散高度栅格（CSV），格值即高度；`+inf` 记障碍。
+- 地形约束三层：① 障碍不可通行；② 足覆盖区域必须全部在图内且拟合平面不陡于阈值（可站立）；
+  ③ 缩放图上的陡峭度作为 A* 代价（`PENALTY_K`），不是硬断路。
 
-- 步长不能超过40 cm
-- 双足间距必须在2-10 cm范围内
-- 转向角不能超过±75°
-- 足平面法向量与重力方向夹角不能超过±20°
+#### 3.1.3 路径规划
 
-#### 3.1.2 环境地形 (Terrain)
-
-**属性**：
-
-- 三维地形图：提供机器人运动环境的三维地形信息
-- 起点和终点的投影坐标：在二维平面上的起始和目标位置
-
-**约束条件**：
-
-- 机器人只能在给定的三维地形图范围内移动
-- 必须从指定起点移动到指定终点
-
-#### 3.1.3 路径规划 (Path Planning)
-
-**属性**：
-
-- 双足落足点序列：包含足中心位置坐标和足平面法向量方向与重力方向夹角
-- 轨迹长度：整个运动轨迹的总长度
-- 转向角曲线：机器人在运动过程中的转向角变化
-- 足平面法向量方向与重力方向夹角曲线：足平面法向量方向与重力方向夹角的变化
-
-**约束条件**：
-
-- 落足点必须在机器人的观测范围内
-- 落足点必须满足机器人物理限制（步长、角度等）
-- 路径必须保证机器人稳定性和可行性
+- 输出是一条落足点序列（不是连续轨迹）。
+- 规划分两层：缩放图上的粗路径 + 原图上的足步生成（§3.2.1）。
 
 ### 3.2 算法设计
 
 #### 3.2.1 分层路径规划
 
-本项目采用分层路径规划策略：
+1. **高层**：把地图按 `scale = 1/40` 降采样（窗口均值，含障碍则整格记障碍），在缩放图上跑 A*，
+   得到引导点序列。缩放用 `Grid::scale_down`，区块还原用 `Grid::restore_block`（返回扫描用的角点闭区间）。
+2. **中层**：把缩放区块映射回原图坐标，形成引导折线。
+3. **底层**：`Robot::find_path` 逐步生成落足点：选摆动脚 → 生成候选（极坐标网格：半径
+   `active_distance..max_stride`、角度相对支撑脚朝向 ±75°、步进 15°）→ `position_check` 过滤
+   （步长/转向/间距/可站立）→ `will_feet_cross` 防交叉 → 按 `direction_determine` 的加权指向选一个候选。
+   候选表为空时返回 `CoreError::NoPath`。
 
-1. **高层规划**：在缩放地图上使用A*算法快速找到粗略路径
-2. **中层规划**：将高层路径点映射回原始地图坐标
-3. **底层规划**：根据机器人物理约束生成具体的足部落点序列
+#### 3.2.2 A* 搜索算法
 
-#### 3.2.2 A*搜索算法
+两个入口，启发式不同（各自与对应基线一致）：
 
-使用改进的A*算法进行路径搜索，考虑地形代价和机器人约束：
+| 入口 | 用途 | 启发式 | 代价 |
+|---|---|---|---|
+| `astar::scale_star` | 规划主路径（缩放图） | 欧氏距离 | 曼哈顿格代价 + 陡峭度 × `PENALTY_K` |
+| `astar::a_star_search` | 单尺度搜索/测试 | 曼哈顿距离 | 邻格高度差（见 `Grid::cost`） |
 
-- **启发式函数**：使用欧几里得距离作为启发式函数
-- **代价函数**：综合考虑地形复杂度和移动代价
-- **节点扩展**：在满足约束条件下扩展可行节点
+邻居洗牌用确定性 `rng::Rng`（同 seed 可复现）；「不同 seed 可给出相同路径」是正常结果
+（地形代价使最优解唯一时）。
 
 #### 3.2.3 足部姿态计算
 
-通过平面拟合算法计算足部与地面接触的最佳拟合平面：
-
-- **点云采样**：获取足部覆盖区域内的地面点云数据
-- **平面拟合**：使用最小二乘法计算最佳接触平面
-- **姿态评估**：计算足部法向量与重力方向的夹角
+- **覆盖格**：足矩形按采样步长 0.5 扫描，四舍五入到整数格后去重（顺序为 `(x, y)` 升序）。
+- **接触平面**：`geom::fit_plane_up` —— 贪心 **up-fit**（保证采样点不落在平面**上方**），
+  **不是**最小二乘法；三点共线等退化情形返回 `DegeneratePlane`。
+- **姿态评估**：`Plane::normal_angle()` 给出法线与竖直方向的夹角；`Foot::standable` 要求
+  全部覆盖格在图内、无障碍，且夹角 < `MAX_NORMAL_ANGLE_RAD`。
 
 #### 3.2.4 双足间距约束检查
 
-双足间距约束检查采用几何计算方法：
+几何口径（与实现一致）：
 
-- **近侧外形线**：定义支撑脚靠近摆动脚一侧的长边所在的直线
-- **距离计算**：计算摆动脚四角到近侧外形线的垂直距离
-- **最小距离**：选取四角中到近侧外形线的最小距离
-- **实际间距**：最小距离减去支撑脚半宽得到实际双足间距
-- **约束验证**：验证计算出的间距是否在2-10单位允许范围内
+1. 取支撑脚**纵向中心线**（过支撑脚中心、沿支撑脚朝向的直线）；
+2. 计算摆动脚新位置的四角到该直线的垂距，取最小值；
+3. 实际间距 = 该最小垂距 − 支撑脚半宽（1.5）；
+4. 判据：`spacing` 满足 `[min − 1e-3, max + 1e-3]` 的**闭区间**。
 
-## 4. 技术实现
+> 第 4 条的 1e-3 容差与闭区间来自实现对齐；它与旧文档「大于 2 且小于 10」的差别登记在
+> `doc/known_divergences.md`。
 
-### 4.1 核心数据结构
+## 4. 实现（Rust）
 
-- **SqDot**：二维坐标点，用于表示地图位置
-- **Intex**：二维整数坐标点，用于表示地图网格位置
-- **SqPlane**：二维地图结构，包含地形代价信息
-- **Foot**：足部结构，包含足部位置、朝向和尺寸信息
-- **Robot**：机器人结构，包含双足和运动约束信息
+| 系统概念 | Rust 位置 |
+|---|---|
+| 阈值 | `crates/trapla-core/src/config.rs`（唯一事实源） |
+| 几何/平面拟合 | `crates/trapla-core/src/geom.rs` |
+| 栅格、降采样、区块还原 | `crates/trapla-core/src/grid.rs` |
+| 地形（法向角、陡峭度） | `crates/trapla-core/src/terrain.rs` |
+| A*、指向点、衰减 | `crates/trapla-core/src/astar.rs` |
+| 足几何与滑移 | `crates/trapla-core/src/foot.rs` |
+| 规划主循环 | `crates/trapla-core/src/robot.rs` |
+| 指标 | `crates/trapla-core/src/metrics.rs` |
+| CSV/IO 与错误分类 | `crates/trapla-io/src/csv.rs`、`error.rs` |
+| CLI 与退出码 | `crates/trapla-cli/src/{main,plan,analyze}.rs` |
 
-### 4.2 核心算法模块
+## 5. 代码结构
 
-- **A*搜索模块**：实现路径规划算法
-- **地形处理模块**：处理三维地形数据
-- **足部姿态模块**：计算足部与地面的接触姿态
-- **约束检查模块**：验证机器人运动约束
+三个 crate 的职责、数据流与依赖方向见 `doc/architecture.md` §1–§2；顶层目录树见 `readme.md`。
 
-### 4.3 测试框架
-
-项目包含完整的测试框架，确保各模块功能正确：
-
-- **单元测试**：针对各个模块进行独立测试
-- **集成测试**：测试模块间的协同工作
-- **性能测试**：评估算法性能和效率
-
-## 5. 代码结构说明
-
-### 5.1 源代码目录结构
-
-```
-src/
-├── aStar/              # A*算法实现
-│   ├── aStar.cpp       # A*算法核心实现
-│   └── direction.cpp   # 方向计算实现
-├── csv/                # CSV文件读写
-│   ├── reader.cpp      # CSV数据读取实现
-│   └── writer.cpp      # CSV数据写入实现
-├── ground/             # 地面处理模块
-│   └── ground.cpp      # 地面数据处理实现
-├── robot/              # 机器人相关模块
-│   ├── foot.cpp        # 足部相关实现
-│   └── robot.cpp       # 机器人行为实现
-├── utils/              # 工具模块
-│   ├── geometry.cpp    # 几何计算实现
-│   ├── index.cpp       # 索引计算实现
-│   ├── mat.cpp         # 矩阵计算实现
-│   ├── order.cpp       # 序列计算实现
-│   ├── scale.cpp       # 缩放功能实现
-│   └── sequence.cpp    # 序列处理实现
-└── main.cpp            # 主程序入口
-
-```
-
-### 5.2 头文件目录结构
-
-```
-include/
-├── aStar/
-│   ├── aStar.hpp       # A*算法头文件
-│   └── direction.hpp   # 方向计算头文件
-├── csv/
-│   ├── reader.hpp      # CSV读取器头文件
-│   └── writer.hpp      # CSV写入器头文件
-├── ground/
-│   └── ground.hpp      # 地面处理头文件
-├── robot/
-│   ├── foot.hpp        # 足部相关头文件
-│   └── robot.hpp       # 机器人相关头文件
-├── utils/
-│   ├── geometry.hpp    # 几何计算头文件
-│   ├── index.hpp       # 索引计算头文件
-│   ├── io.hpp          # IO管理头文件
-│   ├── mat.hpp         # 矩阵计算头文件
-│   ├── order.hpp       # 序列计算头文件
-│   ├── scale.hpp       # 缩放功能头文件
-│   ├── sequence.hpp    # 序列处理头文件
-│   └── test_framework.hpp # 测试框架头文件
-└── prepare.hpp         # 预处理头文件
-```
-
-### 5.3 测试目录结构
-
-```
-tests/
-├── aStar_test.cpp      # A*算法测试
-├── constraints_test.cpp # 约束检查测试
-├── direction_test.cpp  # 方向计算测试
-├── main_test.cpp       # 主程序测试
-├── sequence_test.cpp   # 序列处理测试
-├── walk_test.cpp       # 行走算法测试
-└── run_tests.py        # 测试运行脚本
-
-```
-
-## 6. 编译和构建
-
-项目使用CMake作为构建系统，支持跨平台构建。
-
-### 6.1 构建步骤
-
-1. 创建构建目录：
-
-   ```bash
-   mkdir build
-   cd build
-   ```
-
-2. 配置项目：
-
-   ```bash
-   cmake ..
-   ```
-
-3. 编译项目：
-
-   ```bash
-   make
-   ```
-
-### 6.2 生成的可执行文件
-
-构建完成后会生成以下可执行文件：
-
-- `trapla`：主程序
-- `aStar_test`：A*算法测试程序
-- `constraints_test`：约束条件测试程序
-- `direction_test`：方向计算测试程序
-- `main_test`：主程序测试程序
-- `sequence_test`：序列处理测试程序
-- `walk_test`：行走算法测试程序
-
-## 7. 运行和测试
-
-### 7.1 运行主程序
+## 6. 构建
 
 ```bash
-./trapla
+cargo build --release
 ```
 
-### 7.2 运行测试
+Rust 版本由 `rust-toolchain.toml` 固定。`trapla-viz` 依赖 Bevy，单独构建：
+`cargo build --release -p trapla-viz`。
 
-在项目根目录下执行：
+## 7. 运行与测试
 
 ```bash
-python tests/run_tests.py
+# 规划
+cargo run -q -p trapla-cli -- plan --map data/csv/map.csv --start 0,0 --goal 500,500 \
+  --out /tmp/path_result.csv --seed 42 --metrics /tmp/metrics.json
+
+# 分析已有路径
+cargo run -q -p trapla-cli -- analyze --path /tmp/path_result.csv --goal 500,500
+
+# 测试
+cargo test --workspace --exclude trapla-viz
+uv run pytest python/tests -q
 ```
 
-或者在Windows系统上：
-
-```cmd
-scripts\platform\windows\run_tests.bat
-```
-
-### 7.3 测试框架使用说明
-
-项目采用统一的测试框架，具有以下特点：
-
-1. 使用[TestFramework](../../include/utils/test_framework.hpp)类管理测试用例执行
-2. 使用[TEST](../../include/utils/test_framework.hpp)宏定义测试用例
-3. 集成测试失败数据收集和CSV输出功能
-4. 自动将失败数据写入CSV文件，便于分析
-5. 统一的测试报告格式
-6. 支持详细日志记录
-
-使用示例：
-
-```cpp
-TEST(example_test) {
-    // 定义测试用例
-    std::vector<std::tuple<InputType, ExpectedType>> test_cases = {
-        {input1, expected1},
-        {input2, expected2}
-    };
-
-    // 获取测试框架实例
-    auto& framework = TestFramework::getInstance();
-    const std::string testName = "测试名称";
-    
-    // 执行测试
-    for (const auto& test_case : test_cases) {
-        // 执行测试逻辑
-        auto result = function_to_test(input);
-        
-        // 检查结果
-        if (result != expected) {
-            // 收集失败数据
-            framework.addFailure(testName, {input, expected, result});
-        }
-    }
-    
-    // 定义列名
-    std::vector<std::string> columnNames = {"input", "expected", "result"};
-    
-    // 写入失败数据到CSV文件
-    framework.writeFailures(testName, "failure_data.csv", columnNames);
-    
-    // 如果有失败的测试用例，则抛出异常
-    framework.throwIfFailed(testName, "测试失败");
-}
-
-```
-
-所有测试都遵循统一的模式：
-
-1. 定义测试用例集合
-2. 获取[TestFramework](../../include/utils/test_framework.hpp)实例
-3. 定义测试名称
-4. 执行测试逻辑并收集失败用例
-5. 定义CSV列名
-6. 调用[writeFailures](../../include/utils/test_framework.hpp)方法将失败数据写入CSV文件
-7. 调用[throwIfFailed](../../include/utils/test_framework.hpp)方法在有失败用例时抛出异常
-
-这种统一的测试风格可以：
-
-- 更好地收集和分析失败的测试用例
-- 自动生成CSV报告便于调试
-- 提供一致的测试接口和错误处理机制
-- 提高测试代码的可维护性
-
-### 7.4 测试框架组件详解
-
-#### 7.4.1 TestFramework类
-
-[TestFramework](../../include/utils/test_framework.hpp)是测试框架的核心类，负责管理测试用例的注册和执行。
-
-主要方法：
-
-- [getInstance()](../../include/utils/test_framework.hpp) - 获取单例实例
-- [setWorkingDirectory()](../../include/utils/test_framework.hpp) - 设置工作目录
-- [setLogFile()](../../include/utils/test_framework.hpp) - 设置日志文件
-- [addTest()](../../include/utils/test_framework.hpp) - 添加测试用例
-- [log()](../../include/utils/test_framework.hpp) - 记录日志信息
-- [addFailure()](../../include/utils/test_framework.hpp) - 添加失败数据
-- [hasFailures()](../../include/utils/test_framework.hpp) - 检查是否有失败数据
-- [failureCount()](../../include/utils/test_framework.hpp) - 获取失败数据数量
-- [writeFailures()](../../include/utils/test_framework.hpp) - 将失败数据写入CSV文件
-- [throwIfFailed()](../../include/utils/test_framework.hpp) - 如果有失败数据则抛出异常
-- [clearFailures()](../../include/utils/test_framework.hpp) - 清除指定测试的失败数据
-- [runTests()](../../include/utils/test_framework.hpp) - 运行所有测试用例
-
-#### 7.4.2 TEST宏
-
-[TEST](../../include/utils/test_framework.hpp)宏用于定义测试用例，自动注册到[TestFramework](../../include/utils/test_framework.hpp)中。
-
-使用方法：
-
-```cpp
-TEST(test_name) {
-    // 测试代码
-}
-```
-
-#### 7.4.3 TestFailureCollector类（已集成到TestFramework）
-
-TestFailureCollector类的功能已集成到TestFramework类中，提供更简洁的接口用于失败数据收集和报告生成。
-
-### 7.5 测试运行方式
-
-在项目根目录下执行：
-
-```bash
-python tests/run_tests.py
-```
-
-或者在Windows系统上：
-
-```cmd
-scripts\platform\windows\run_tests.bat
-```
+参数、退出码与测试分层见 `readme.md`。

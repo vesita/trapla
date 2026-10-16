@@ -1,4 +1,14 @@
-# NoPath 诊断（T6d，只读）：51 个与归一化无关的 `exit=2` 是缺陷还是真不可达
+# NoPath 诊断（T6d 快照，只读）：当时 51 个与归一化无关的 `exit=2` 是缺陷还是真不可达
+
+> **快照声明（先读这段）**：本文是 **T6d 当时的快照**，全部 e2e 数字锚在冻结二进制 `41ddc8bf…`。
+> **现行口径**（本仓 HEAD）：同一 120 组合是 `exit=0 72 / exit=1 48 / exit=2 0`；48 个失败
+> **全部是越界目标**（`goal.x ≥ 1000`），L1 = 48、**L2 = 0**。标题里的「51（48 L1 + 3 L2）」已过期：
+> 那 3 个 L2 由书账错位修正消掉，越界目标由 T9a 改成 `exit=1`（输入错）。
+> 现行复现：`cargo test -p trapla-core --test port_verification nopath_layering_at_head -- --nocapture`。
+>
+> **路径约定**：本文中出现的 C++ 实现路径（`src/...`、`include/...`，以及只写文件名的 `robot.cpp:673` 这类）
+> 都是**历史修订 `0038315` 里的路径**，
+> 当前工作树不含 C++ 实现。取法：`git show 0038315:<路径>`；harness 在分支 `baseline-seeded`（`0e48ccb`）。
 
 - 任务：`task-21`。**只读**，本文件是唯一写入物；未修改任何代码、未跑任何 `cargo` 命令、未 git commit。
 - 冻结二进制：`/tmp/nopath/trapla`

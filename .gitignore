@@ -1,10 +1,7 @@
-/build
 /.vscode
-/log
 *__pycache__*
 /temp
-/trapla
 
-# Rust / cargo workspace（T1 新增；上面的 C++ 规则保持不变）
+# Rust / cargo workspace
 /target
 **/target

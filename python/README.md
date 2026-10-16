@@ -68,11 +68,11 @@ module-name = "trapla_scripts"
 绘图默认只把 PNG 存到 `--out` 指定的路径，**不调用 `plt.show()`**：
 无 `DISPLAY` 的环境下不会阻塞。需要交互窗口时显式加 `--show`。
 
-## 与旧脚本、MATLAB 版的关系
+## 与已移除的旧脚本的关系
 
-- MATLAB 版 `scripts/data_generator/gen_map.m` 已由 Python 版取代，不移植、不维护，
-  只保留 Python 一份实现。
-- 仓库原有的 `scripts/` 脚本保持原样，本工具箱不复用它们相对 CWD 的默认路径。
+本工具箱取代了原先散在 `scripts/` 下的数据生成、格式转换与绘图脚本。那些脚本连同 C++ 实现
+已在重写收尾时一并移除（历史里可查：`git show 0038315:scripts/...`）。仓库现在只有 Python
+这一份实现，也不再有 MATLAB 版（原 `scripts/data_generator/gen_map.m`）。
 
 ## 测试
 

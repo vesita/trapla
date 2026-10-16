@@ -1,5 +1,9 @@
 # T7 独立移植复核报告
 
+> **路径约定**：本文中出现的 C++ 实现路径（`src/...`、`include/...`，以及只写文件名的 `robot.cpp:673` 这类）
+> 都是**历史修订 `0038315` 里的路径**，
+> 当前工作树不含 C++ 实现。取法：`git show 0038315:<路径>`；harness 在分支 `baseline-seeded`（`0e48ccb`）。
+
 - 复核人：`recon-trapla`（**T6b/T0 作者**；不是 T2/T3/T4/T5 的作者——见 §11 的独立性声明）。
 - 复核任务：`task-14`（原始 8 项）+ `task-25`（增补，**取代 task-14 的第 3、4 项**，并新增性能复核）。
 - 复核范围：git 提交区间 **`0622578..HEAD`**（HEAD = `a53e19d`）。复核时 `git status --porcelain` 干净（只有本报告与 `port_verification.rs` 两个新增物）。
@@ -310,24 +314,29 @@ C++ 基线（`git show 0038315:baseline/catwalk_metrics.json`，goal=(500,500) �
 
 ## 8. 文档一致性 + 悬空引用（task-14 第 8 项）
 
-`doc/` + `readme.md` 中提到 C++ 文件/构建的地方（计数 = `src/`/`include/`/`.cpp`/`.hpp`/cmake/C++ 命中行）：
+> **T7 当时的快照，已由 T9（task-15）处理。** 下表是 T7 复核时的文档状态，保留它是为了记录 T9 的输入；
+> **现行状态见本节末段**。
 
-| 文件 | 命中行 | 与 Rust 现状 |
-|---|---|---|
-| `doc/project.md` | 58 | **仍是 C++ 时代的项目说明**（"项目使用CMake"、目录结构列 `src/`+`include/`、技术实现按 C++ 类描述） |
-| `doc/catwalk_diagnosis.md` | 34 | 有意：诊断针对 C++ 基线，标注了 `src/...:行` |
-| `doc/known_divergences.md` | 27 | 有意：分歧对照必须引 C++ 出处 |
-| `doc/baseline.md` | 12 | 有意：基线记录 |
-| `doc/catwalk_fix.md` | 6 | 有意：引 C++ 行为 |
-| `doc/nopath_diagnosis.md` | 5 | 有意（但数字已过期，见 D3） |
-| `readme.md` | 6 | **未更新**：`readme.md:5`「目前仍然存在走猫步的问题」（已做 D+B，且 §5.2 显示主判据仍未达标但形态已变）、`readme.md:88-103` CMake 构建/安装、`readme.md:111` `python3 scripts/run_tests.py`（路径本来就是错的） |
-| `doc/scripting.md` / `doc/sync.md` / `doc/problem_flow.md` | 0 | 脚本/同步/问题分析文档，不提 C++ 源文件路径 |
+| 文件 | T7 时命中行 | T7 判定 | T9 处理 |
+|---|---|---|---|
+| `doc/project.md` | 58 | 仍是 C++ 时代的项目说明（CMake、`src/`+`include/` 目录、按 C++ 类描述实现） | 已重写为 Rust 版（需求/约束/算法 + crate 映射） |
+| `doc/catwalk_diagnosis.md` | 34 | 有意：诊断针对历史基线，引 `src/...:行` | 引用保留，文首声明为修订 `0038315` 的路径并给出取法 |
+| `doc/known_divergences.md` | 27 | 有意：分歧对照要引来源 | 同上；D3 已改为「快照 + 现行口径」两段 |
+| `doc/baseline.md` | 12 | 有意：基线记录 | 同上；并说明 C++ 已移除、harness 在分支 `baseline-seeded` |
+| `doc/catwalk_fix.md` | 6 | 有意：引历史行为 | 同 `catwalk_diagnosis.md` |
+| `doc/nopath_diagnosis.md` | 5 | 有意（数字已过期） | 文首加「快照声明」：现行 72/48/0、全 L1、越界报 `exit=1` |
+| `readme.md` | 6 | **未更新**（C++ 构建/安装说明、指向已删测试驱动的命令、走猫步现状表述） | 已整体重写为 Rust 工作流 |
+| `doc/scripting.md` / `doc/sync.md` / `doc/problem_flow.md` | 0 | 不提 C++ 源文件路径 | `scripting.md` 改为指针；`problem_flow.md` 重写为建模文档 |
 
-**仍指向 `src/` / `include/` 的悬空引用（C++ 移除后会断）**：目前 C++ 源码**仍在树里**
-（`git ls-files src include | wc -l` = **30**），所以这些引用现在还能解析；C++ 移除后，上表里
-`readme.md`、`doc/project.md`、`doc/catwalk_diagnosis.md`、`doc/known_divergences.md`、`doc/baseline.md`、
-`doc/catwalk_fix.md`、`doc/nopath_diagnosis.md` 里的 `src/...`/`include/...` 路径会全部失效。
-**待办（后续任务）**：`readme.md` 整体重写为 Rust 工作流；`doc/project.md` 标注为历史/或重写。
+**T9 后的现状（实测）**：C++ 实现目录、构建文件与 5 个专用脚本路径已从工作树移除
+（44 个被跟踪文件，`git status` 全部为 ` D`）；`readme.md` 对 C++ 构建工具与源文件扩展名 **零命中**；
+`doc/` 里保留的历史路径在每份文档文首都声明为「修订 `0038315` 里的路径」并给出 `git show 0038315:<路径>` 的取法；
+新增 `doc/architecture.md` 作为架构入口。剩余命中只在 `crates/**` 的**移植溯源注释**里
+（每个 Rust 函数注明对应的历史 C++ 函数），那不是文档悬空引用，且按 T9 硬约束不许改 `crates/` 源码。
+
+**当时的悬空引用风险**：T7 复核时 C++ 源码仍在树里（`git ls-files src include` = 30 个文件），
+所以文档里的 `src/...` 还能解析；T9 移除后，这些引用按上述「修订 `0038315` + `git show`」口径继续可用。
+
 
 ---
 

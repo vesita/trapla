@@ -7,6 +7,9 @@
 - 基线来源：C++ 仓库 `b53543b`；冻结证据修订 `0038315`；夹具在 `crates/trapla-core/tests/golden/`。
 - 夹具是**冻结的 C++ 行为 oracle**：出现有意分歧时**不改夹具**，而是在测试里逐行登记 + 在本文档留证。
 - 登记时间：2026-10-16。
+> **路径约定**：本文中出现的 C++ 实现路径（`src/...`、`include/...`，以及只写文件名的 `robot.cpp:673` 这类）
+> 都是**历史修订 `0038315` 里的路径**，
+> 当前工作树不含 C++ 实现。取法：`git show 0038315:<路径>`；harness 在分支 `baseline-seeded`（`0e48ccb`）。
 
 ---
 
@@ -129,18 +132,28 @@ Rust 曾在 `crates/trapla-core/src/robot.rs` 忠实移植同一式子。`suppor
 
 ---
 
-## D3 尚未定位的 `NoPath` 缺口（登记，本任务不修）
+## D3 NoPath 分层与越界语义（**当时快照** + 现行口径）
 
-配对实测显示，120 个组合中有 **51 个在修前/修后都是 `exit=2`** —— 归一化对它们没有任何影响，
-所以它们**不是** `satisfy_turn` 引起的。按目标聚合失败组合：
-
-| goal | 失败的 (start, seed) 组合数 |
-|---|---|
-| (1500, 200) / (1500, 1500) / (1200, 900) / (1000, 500) | 各 12 |
-| (900, 300) | 3 |
-
-候选原因（**读码推断，未验证**）：`robot.rs:402-412` 的 `scale_star` 返回 `None`（`find_path`
-里另一条 `NoPath` 出口），或候选在 spacing/stride 约束下为空。处置：登记待查，不在 T6b 修。
+> **本节是快照对照，不是当前数字。** 同一份 120 组合（4 起点 × 10 目标 × 3 seed）在两个时间点上是：
+>
+> - **当时（T6b，冻结二进制 `41ddc8bf…`）**：51 个 `exit=2` = **48 个 L1**（高层 `scale_star` 返回
+>   `None`）+ **3 个 L2**（`find_target` 候选表为空，`scale_star` 是 `Some`）。
+> - **现行（本仓 HEAD）**：**72 个 `exit=0` / 48 个 `exit=1` / 0 个 `exit=2`**。48 个失败
+>   **全部是越界目标**（`goal.x ≥ 1000`，地图 1000 行；即 `(1000,500)/(1200,900)/(1500,1500)/(1500,200)`
+>   各 12 = 4 起点 × 3 seed），且 **L2 = 0**。
+>
+> 两处变化的原因：① 书账错位修正（见 §三处代码级改动）消掉了那 3 个 L2；
+> ② T9a 把越界坐标从「规划失败 `exit=2`」改为「输入错 `exit=1`」。
+>
+> 复现现行口径：
+>
+> ```bash
+> cargo test -p trapla-core --test port_verification nopath_layering_at_head -- --nocapture
+> cargo run -q -p trapla-cli -- plan --map data/csv/map.csv --start 0,0 --goal 1500,1500 --out /tmp/x.csv --seed 0; echo "exit=$?  # 期望 1"
+> ```
+>
+> 当时的分层证据（按目标聚合、探针方法）保留在 `doc/nopath_diagnosis.md`，那篇文件同样在文首
+> 标注了「快照 vs 现行」。
 
 ---
 
@@ -394,5 +407,5 @@ cargo test -p trapla-core --test port_verification golden_fixture_audit -- --noc
 | 2026-10-16 | 建立；登记 D1（satisfy_turn 归一化）、D2（`--start` 保真度）、D3（未定位 NoPath 缺口） |
 | 2026-10-16 | D4：`Grid::restore_block` 换算方向乘→除（地形约束空转修正；只做方向修正时粗图被死块切成条带、120 组合净回归 36、耗时 ≈13×） |
 | 2026-10-16 | D4 续（T6f）：陡峭度由断路改为代价（`steep_extend` 不再按 10.0 判死、`scale_star` 加 `PENALTY_K = 3.0`）⇒ 120 组合恢复 72/48、净回归 0；猫步三判据未达标且非一律不劣；耗时 14.5×/29× 仍未达成 |
-| 2026-10-16 | D4 续（T6g）：按缩放节点惰性记忆化 `steep_extend` + 去掉 `heights` 物化 ⇒ 耗时 4.1×/4.9×，**18 个输出 SHA 逐项不变**（纯性能改动）；第一个用例距 4× 目标差约 7% |
+| 2026-10-16 | D4 续（T6g）：按缩放节点惰性记忆化 `steep_extend` + 去掉 `heights` 物化 ⇒ **加速比 4.1×/4.9× 达标**，绝对耗时目标「第一例 ≤ 0.030 s」未达成（实测 0.032 s）；**18 个输出 SHA 逐项不变**（纯性能改动） |
 | 2026-10-16 | D5：`standable.csv` 的 `normal_angle` 列退休（C++ `unordered_set` 迭代序 + 顺序敏感 `up_fit` ⇒ 不是可复现 oracle；布尔判定 45/45 一致，夹具不改） |
