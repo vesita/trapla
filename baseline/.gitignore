@@ -1,9 +1,0 @@
-# T0 基线证据目录：只排除编译产物，不排除任何证据。
-# 必须能入库的：*.csv  *.json  *.patch  *.md  *.cpp  *.py  *.txt，以及 test_logs/*.out（原始测试输出）。
-# 注意：不要用全局 *.out / *.txt 规则——test_logs/*.out 与 golden/golden_summary.txt 是证据。
-/harness/golden_dump
-/harness/catwalk_probe
-/harness/*.o
-/harness/*.obj
-/harness/*.d
-/harness/*.exe
