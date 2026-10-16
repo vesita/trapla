@@ -1,0 +1,35 @@
+diff --git a/src/utils/index.cpp b/src/utils/index.cpp
+index 324a570..b5f41f7 100644
+--- a/src/utils/index.cpp
++++ b/src/utils/index.cpp
+@@ -1,5 +1,20 @@
+ #include "utils/index.hpp"
+ 
++#include <cstdlib>
++
++namespace {
++// T0 baseline 的唯一改动：scale_star 路径上的随机源由 std::random_device
++// 换成固定种子的 std::mt19937。默认种子 1；为生成多 seed 的冻结证据，
++// 允许用环境变量 TRAPLA_SEED 覆盖（不设时行为完全固定）。
++unsigned baseline_rng_seed() {
++    const char* env = std::getenv("TRAPLA_SEED");
++    if (env != nullptr && *env != '\0') {
++        return static_cast<unsigned>(std::strtoul(env, nullptr, 10));
++    }
++    return 1u;
++}
++}  // namespace
++
+ std::size_t IntexHash::operator()(const Intex& index) const { 
+     return std::hash<int>()(index.x) ^ std::hash<int>()(index.y);
+ }
+@@ -99,8 +114,7 @@ std::vector<Intex> Intex::get_neighbour(int x_ceil, int y_ceil) const {
+ 
+ std::vector<Intex> Intex::get_neighbour_shuffled(int x_ceil, int y_ceil) const {
+     std::vector<Intex> neighbours = get_neighbour(x_ceil, y_ceil);
+-    std::random_device rd;
+-    std::mt19937 g(rd());
++    static std::mt19937 g(baseline_rng_seed());
+     std::shuffle(neighbours.begin(), neighbours.end(), g);
+     return neighbours;
+ }

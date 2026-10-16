@@ -1,0 +1,20 @@
+grounds.csv rows=387
+normal_angle.csv rows=45
+up_fit.csv rows=45
+trip.csv rows=45
+cover.csv cases=40 rows=1072
+corner.csv rows=40
+standable.csv rows=45
+slide.csv rows=45
+satisfy_spacing.csv rows=55
+satisfy_stride.csv rows=40
+satisfy_turn.csv rows=42
+restore.csv rows=40
+restore_dot.csv rows=60
+central_restore.csv rows=70
+index_scale.csv rows=220
+scale_graph.csv rows=35 cells_rows=5217
+steep_extend.csv rows=46
+geometric_decay.csv rows=76
+direction_determine.csv rows=40 guides_rows=110
+done

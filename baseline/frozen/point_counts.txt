@@ -1,0 +1,14 @@
+patched seed=3 input=default run=1 exit=0 points=50
+patched seed=3 input=default run=2 exit=0 points=50
+patched seed=3 input=alt run=1 exit=0 points=130
+patched seed=3 input=alt run=2 exit=0 points=130
+patched seed=6 input=default run=1 exit=0 points=107
+patched seed=6 input=default run=2 exit=0 points=107
+patched seed=6 input=alt run=1 exit=0 points=140
+patched seed=6 input=alt run=2 exit=0 points=140
+patched seed=7 input=default run=1 exit=0 points=58
+patched seed=7 input=default run=2 exit=0 points=58
+patched seed=7 input=alt run=1 exit=0 points=132
+patched seed=7 input=alt run=2 exit=0 points=132
+unpatched-randomsource input=default run=1 exit=0 points=107
+unpatched-randomsource input=default run=2 exit=0 points=52
