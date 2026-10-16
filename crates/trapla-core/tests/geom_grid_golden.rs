@@ -7,14 +7,17 @@
 //!
 //! 夹具一律**按表头名**取值（价值：夹具只改值或重排列时测试不散架）。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 use std::path::PathBuf;
 
 use approx::assert_relative_eq;
+use trapla_core::astar::scale_star;
 use trapla_core::error::CoreError;
 use trapla_core::geom::{Dir4, Dot, Idx, Line, Plane, Point3, fit_plane_up, index_scale};
 use trapla_core::grid::{Grid, OBSTACLE};
+use trapla_core::rng::Rng;
+use trapla_core::terrain::Terrain;
 
 // ---------------------------------------------------------------- 夹具读取
 
@@ -269,63 +272,160 @@ fn golden_restore_dot_rows_and_delegation() {
     assert_dot_close(g0.restore_dot(Idx::new(-2, 5), 0.025), Dot::new(0.0, 6.0));
 }
 
-/// `restore.csv` 的 `int` 行：`SqPlane::restore(const Intex&, scale)`（`geometry.cpp:925-929`）——
-/// 两端各自 `ceil(index*scale)` 后 `orth_near` 钳位，顺序是 `(近端, 远端)`。
+/// `restore.csv`：原 `SqPlane::restore(const Intex&, scale)`（`src/utils/geometry.cpp:925-929`）。
 ///
-/// `dot` 行有意**不复现**：原 `SqDot` 重载在同一函数体里混用了 const `scale()`（浮点乘法）
-/// 与非 const `scale()`（`ceil`），`scale=0.025` 的 7 组两模式不一致。这里断言那些行确实与
-/// 本仓结果不同，防回归到旧的双语义。
+/// **有意分歧（D4，登记见 `doc/known_divergences.md`）**：夹具记的是原实现的**乘**方向
+/// （`ceil(block * scale)`），本仓修正为**除**（`trunc(block / scale)`，与 `scale_down` /
+/// `central_restore` 同向）。夹具**一个字节都没有改**；20 组里 8 组新旧恰好一致
+/// （全部 `scale = 1.0` 的行，以及两端都被钳到边界的行），12 组有意分歧。
+///
+/// 表里的期望值是对 `trunc` + `orth_near` 钳位的**独立复算**（算式见 D4），不是从被测函数抄的；
+/// 同时逐行断言夹具仍是**旧值那一份** —— 夹具一旦被改成新语义，这里立刻变红。
 #[test]
-fn golden_restore_block_rows_unify_scale_semantics() {
+fn golden_restore_block_rows_register_direction_fix() {
+    // (blockx, blocky, scale, 修后期的 (near_x, near_y, far_x, far_y))，独立复算得到
+    type Corners = (i32, i32, i32, i32);
+    const CORRECTED: [(i32, i32, f64, Corners); 20] = [
+        (26, 13, 1.0, (4, 6, 4, 6)),
+        (26, 26, 1.0, (4, 6, 4, 6)),
+        (-2, 8, 1.0, (0, 6, 0, 6)),
+        (-3, -1, 0.025, (0, 0, 0, 0)),
+        (7, 12, 0.5, (4, 6, 4, 6)),
+        (0, 17, 1.0, (0, 6, 1, 6)),
+        (15, -2, 0.5, (4, 0, 4, 0)),
+        (5, 27, 1.0, (4, 6, 4, 6)),
+        (28, 17, 0.025, (4, 6, 4, 6)),
+        (3, 7, 0.5, (4, 6, 4, 6)),
+        (23, 27, 0.025, (4, 6, 4, 6)),
+        (8, 11, 0.025, (4, 6, 4, 6)),
+        (8, 1, 0.5, (4, 2, 4, 4)),
+        (20, 16, 0.025, (4, 6, 4, 6)),
+        (22, 4, 0.025, (4, 6, 4, 6)),
+        (22, 3, 0.5, (4, 6, 4, 6)),
+        (6, 8, 0.025, (4, 6, 4, 6)),
+        (0, 7, 0.025, (0, 6, 4, 6)),
+        (30, 10, 0.025, (4, 6, 4, 6)),
+        (23, 24, 0.025, (4, 6, 4, 6)),
+    ];
     let table = Table::load("restore.csv");
     let grounds = load_grounds();
-    let g0 = &grounds[&0];
-    let mut int_rows = BTreeMap::new();
-    let mut dot_rows = BTreeMap::new();
+    let g0 = &grounds[&0]; // 5x7
+
+    let expected: BTreeMap<(i32, i32), (f64, Corners)> = CORRECTED
+        .iter()
+        .map(|&(bx, by, scale, corners)| ((bx, by), (scale, corners)))
+        .collect();
+
+    let mut same_as_golden = 0_usize;
+    let mut divergent = 0_usize;
+    let mut dot_equals_int = 0_usize;
+    let mut golden_int = BTreeMap::new();
+    let mut golden_dot = BTreeMap::new();
     for row in &table.rows {
         let key = (
-            table.text(row, "blockx"),
-            table.text(row, "blocky"),
-            table.text(row, "scale"),
+            table.num(row, "blockx") as i32,
+            table.num(row, "blocky") as i32,
         );
         let corners = (
-            Idx::new(
-                table.num(row, "outax") as i32,
-                table.num(row, "outay") as i32,
-            ),
-            Idx::new(
-                table.num(row, "outbx") as i32,
-                table.num(row, "outby") as i32,
-            ),
+            table.num(row, "outax") as i32,
+            table.num(row, "outay") as i32,
+            table.num(row, "outbx") as i32,
+            table.num(row, "outby") as i32,
         );
         match table.text(row, "mode").as_str() {
             "int" => {
-                int_rows.insert(key, corners);
+                golden_int.insert(key, corners);
             }
             "dot" => {
-                dot_rows.insert(key, corners);
+                golden_dot.insert(key, corners);
             }
             other => panic!("未知 mode {other}"),
         }
     }
-    assert_eq!(int_rows.len(), 20);
+    assert_eq!(golden_int.len(), 20);
 
-    let mut eliminated_divergences = 0_usize;
-    for (key, want_int) in &int_rows {
-        let block = Idx::new(key.0.parse().unwrap(), key.1.parse().unwrap());
-        let scale = parse_f64(&key.2);
-        let got = g0.restore_block(block, scale);
-        assert_eq!(got, *want_int, "restore_block({block:?}, {scale})");
-        let want_dot = dot_rows[key];
-        if want_dot != *want_int {
-            // 旧 SqDot 重载的混用语义在这里给出不同的角 —— 本仓不自洽地复现它
-            assert_ne!(got, want_dot, "旧双语义被悄悄复现了：{block:?} @ {scale}");
-            eliminated_divergences += 1;
+    for (block, want_golden) in &golden_int {
+        let (scale, want_corrected) = expected[block];
+        let got = g0.restore_block(Idx::new(block.0, block.1), scale);
+        assert_eq!(
+            (got.0.x, got.0.y, got.1.x, got.1.y),
+            want_corrected,
+            "restore_block({block:?}, {scale}) 与独立复算不符"
+        );
+        // 结构性不变量：近端不越过远端，且都落在 5x7 内
+        assert!(got.0.x <= got.1.x && got.0.y <= got.1.y, "{got:?}");
+        assert!(got.0.x >= 0 && got.1.x <= 4 && got.0.y >= 0 && got.1.y <= 6);
+
+        if got.0.x == want_golden.0 && got.0.y == want_golden.1 {
+            same_as_golden += 1;
+        } else {
+            divergent += 1;
+        }
+        if *want_golden == golden_dot[block] {
+            dot_equals_int += 1;
         }
     }
+    assert_eq!(
+        (same_as_golden, divergent),
+        (8, 12),
+        "新旧一致/分歧的行数变了，请复核 restore.csv 与 D4"
+    );
+    // 夹具事实：原 `SqDot` 重载混用 const/非 const `scale()`，13 组与 int 行相同、7 组不同
+    assert_eq!(dot_equals_int, 13);
+}
+
+/// D4 的核心判据：区块映射必须**铺满整张图**，而不是全挤在左上角同一小块。
+///
+/// 修前 `ceil(block*scale)`：25×75 个区块只映射到 `near_x ∈ {0,1}`、`far_x = {1}`、
+/// `near_y ∈ {0,1,2}`、`far_y ∈ {1,2}`，1875 个区块加起来只扫到 2002 格，`steep_extend`
+/// 在这 2002 格上恒不判死（无 `inf`、起伏也没被看见）。
+/// 修后每个区块覆盖 41×41 的原图窗口（相邻区块边界重叠一格）。
+///
+/// 同时钉住与 [`Grid::restore_dot`] 的方向一致性：区块中心的落格必须落在本区块两角之间。
+#[test]
+fn restore_block_spans_the_whole_grid() {
+    let grid = Grid::new(vec![0.0; 1000 * 3000], 1000, 3000).unwrap();
+    let scale = 1.0 / 40.0;
+
+    assert_eq!(
+        grid.restore_block(Idx::new(0, 0), scale),
+        (Idx::new(0, 0), Idx::new(40, 40))
+    );
+    assert_eq!(
+        grid.restore_block(Idx::new(24, 74), scale),
+        (Idx::new(960, 2960), Idx::new(999, 2999))
+    );
+
+    let mut near_x = BTreeSet::new();
+    let mut near_y = BTreeSet::new();
+    let mut scanned = 0_usize;
+    for i in 0..25 {
+        for j in 0..75 {
+            let (near, far) = grid.restore_block(Idx::new(i, j), scale);
+            near_x.insert(near.x);
+            near_y.insert(near.y);
+            scanned += (far.x - near.x + 1) as usize * (far.y - near.y + 1) as usize;
+
+            let center = grid.restore_dot(Idx::new(i, j), scale).as_idx();
+            assert!(
+                center.x >= near.x && center.x <= far.x && center.y >= near.y && center.y <= far.y,
+                "区块 ({i},{j}) 的中心 {center:?} 不在角 {near:?}..{far:?} 之间"
+            );
+        }
+    }
+    assert_eq!(near_x.len(), 25, "区块行起点必须铺满整列");
+    assert_eq!(near_y.len(), 75, "区块列起点必须铺满整行");
+    assert_eq!(
+        (*near_x.iter().min().unwrap(), *near_x.iter().max().unwrap()),
+        (0, 960)
+    );
+    assert_eq!(
+        (*near_y.iter().min().unwrap(), *near_y.iter().max().unwrap()),
+        (0, 2960)
+    );
     assert!(
-        eliminated_divergences >= 1,
-        "夹具里没有双语义分歧行？请复核 restore.csv"
+        scanned > 3_000_000,
+        "全图扫描格数应超过 3e6（修前只有 2002），实际 {scanned}"
     );
 }
 
@@ -931,4 +1031,78 @@ fn golden_scale_graph_rows() {
         }
     }
     assert_eq!(checked, 5217);
+}
+
+/// 测量型判据：`scale_star`（高层 A*）在**真实地图**上的 `expanded` 与引导点个数。
+///
+/// D4 修正 `restore_block` 方向后，高层搜索的代价项从「恒 0 的 `steep_extend`」变成真实地形代价，
+/// `expanded` 与引导路径都会变。CLI 的 metrics JSON 不含 `expanded`，而 `astar.rs` 不在本任务写域内，
+/// 所以这里用公开 API 单独探一次（固定 seed，可复现）。
+#[test]
+fn probe_scale_star_expanded_on_real_map() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/csv/map.csv");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("读不到 {}: {e}", path.display()));
+    let mut cells = Vec::new();
+    let (mut rows, mut cols) = (0_usize, 0_usize);
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut width = 0_usize;
+        for token in line.split(',') {
+            cells.push(
+                token
+                    .trim()
+                    .parse::<f64>()
+                    .expect("map.csv 必须是纯数值（无表头）"),
+            );
+            width += 1;
+        }
+        rows += 1;
+        cols = width;
+    }
+    assert_eq!((rows, cols), (1000, 3000), "map.csv 形状变了");
+    let terrain = Terrain::from_grid(Grid::new(cells, rows, cols).unwrap());
+    let scale = 1.0 / 40.0;
+
+    let start = Idx::new(0, 0);
+    let goal = Idx::new(500, 500);
+    let mut rng = Rng::from_seed(42);
+    let search = scale_star(&terrain, start, goal, scale, &mut rng)
+        .expect("(0,0)->(500,500) 应可达（同一粗图条带内）");
+    assert_eq!(search.path.first(), Some(&start));
+    assert_eq!(search.path.last(), Some(&goal));
+    assert!(search.expanded > 0 && search.expanded <= 25 * 75);
+    println!(
+        "scale_star {start:?}->{goal:?} seed42: expanded={} 引导点数={}",
+        search.expanded,
+        search.path.len()
+    );
+
+    // 方向修正后，粗图的判死块把地图切成条带；(500,500)->(900,1200) 分处条带两侧，
+    // 高层 A* 因此返回 None —— 这是真实地形约束的结果，如实打印，不假装可达。
+    let mut rng = Rng::from_seed(42);
+    match scale_star(
+        &terrain,
+        Idx::new(500, 500),
+        Idx::new(900, 1200),
+        scale,
+        &mut rng,
+    ) {
+        Some(found) => println!(
+            "scale_star (500,500)->(900,1200) seed42: expanded={} 引导点数={}",
+            found.expanded,
+            found.path.len()
+        ),
+        None => println!("scale_star (500,500)->(900,1200) seed42: None（粗图不可达）"),
+    }
+
+    // 确定性：同 seed 两次逐点相同（可复现性不能因为换方向而丢）
+    let mut a = Rng::from_seed(42);
+    let mut b = Rng::from_seed(42);
+    let first = scale_star(&terrain, start, goal, scale, &mut a).unwrap();
+    let second = scale_star(&terrain, start, goal, scale, &mut b).unwrap();
+    assert_eq!(first.path, second.path);
+    assert_eq!(first.expanded, second.expanded);
 }

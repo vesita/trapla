@@ -162,7 +162,32 @@ pub fn a_star_search(g: &Grid, start: Idx, goal: Idx) -> Option<Search> {
     Some(Search { path, expanded })
 }
 
+/// 陡峭度代价的权重 `PENALTY_K`（量纲：代价单位 / 高度单位）。
+///
+/// `Terrain::steep_extend` 返回的是**高度单位**的综合评分
+/// （`0.4*stddev + 0.3*height_diff + 0.3*avg_slope`），而单步代价
+/// `Grid::cost` = 曼哈顿距离（≈1）+ 原图对应格高度。后者在本仓 `data/csv/map.csv` 上
+/// 实测是 `1 + 27..123`，而缩放坐标只落在左上角 `25 × 75` 的区块里、取值约 27~31 ⇒ **单步 ≈ 31**。
+///
+/// 取 `K = 3.0` 的锚点：**原来被硬判死（`score > 10.0`）的窗口，现在恰好相当于多走一格**
+/// （`3.0 × 10 = 30 ≈ 31`）。低于这个值，陡峭度只是同长度路径之间的 tie-break；
+/// 高于它，搜索会为大范围绕行买单。敏感性实测见 `doc/known_divergences.md` D4。
+pub const PENALTY_K: f64 = 3.0;
+
 /// 缩放图上的搜索：先按 `scale` 降采样搜索，再把路径还原到原图。
+///
+/// 就是 [`scale_star_with_penalty`] 取 `penalty_k = PENALTY_K`。
+pub fn scale_star(
+    t: &Terrain,
+    start: Idx,
+    goal: Idx,
+    scale: f64,
+    rng: &mut rng::Rng,
+) -> Option<Search> {
+    scale_star_with_penalty(t, start, goal, scale, rng, PENALTY_K)
+}
+
+/// [`scale_star`] 的实现体；陡峭度权重 `penalty_k` 显式给（`0.0` = 完全忽略地形）。
 ///
 /// 原实现对应 `scale_star`（`src/aStar/aStar.cpp:78-137`）。`rng` 的用途在这里：
 /// 原 `current.get_neighbour_shuffled(sr, sc)`（`aStar.cpp:100`）每步洗牌邻居顺序，
@@ -174,6 +199,8 @@ pub fn a_star_search(g: &Grid, start: Idx, goal: Idx) -> Option<Search> {
 ///   （`Intex::scale` → `index_scale`，`index.cpp:43-45`、`geometry.cpp:839-860`）；
 /// - `graph.cost(current, next)` 与 `steep_extend` 都用**原图**（`aStar.cpp:107,114`），
 ///   其中 `cost` 拿缩放坐标去索引原图 —— 原实现如此，照抄；
+/// - 邻居代价 `= cost + steep_extend * penalty_k`：陡峭度进**代价**、不进断路
+///   （`steep_extend` 返回 `None` 只表示越界 / 障碍占比 ≥ 0.3 / 无可用高度）；
 /// - 启发式用欧氏距离（`aStar.cpp:117`）；
 /// - 终端的「引导点」序列：`[goal]` + 从 `came_from[sg]` 回走到 `ss`（不含）的每个区块经
 ///   `restore_dot` 还原 + `[start]`，最后整体反转（`aStar.cpp:128-135`）。
@@ -183,12 +210,13 @@ pub fn a_star_search(g: &Grid, start: Idx, goal: Idx) -> Option<Search> {
 ///   （原实现直接索引 / 分配，是 UB / 崩溃）；
 /// - 不可达时返回 `None`（原实现回退成假的 `[start, goal]`）；`ss == sg` 时原样返回
 ///   `[start, goal]`，与原实现一致。
-pub fn scale_star(
+pub fn scale_star_with_penalty(
     t: &Terrain,
     start: Idx,
     goal: Idx,
     scale: f64,
     rng: &mut rng::Rng,
+    penalty_k: f64,
 ) -> Option<Search> {
     if !scale.is_finite() || scale <= 0.0 {
         return None;
@@ -229,6 +257,25 @@ pub fn scale_star(
     let mut expanded = 0usize;
     let mut reached = ss == sg;
 
+    // 陡峭度的惰性记忆化：`steep_extend(restore_block(next, scale))` **只取决于缩放节点 `next`**，
+    // 与从哪个节点走来无关，而同一节点会作为多个节点的邻居被反复求值；每次求值要扫 1681 格并分配
+    // 一个约 1600 元素的 `Vec`。这里按节点缓存第一次的结果。
+    //
+    // 槽位：`None` = 还没求值；`Some(None)` = 已求值且**不可行**（越界 / 障碍占比 ≥ 0.3 / 无可用高度）；
+    // `Some(Some(v))` = 已求值，代价 `v`。外层 `Option` 就是「是否已求值」这一位。
+    type SteepSlot = Option<Option<f64>>;
+    let mut steep_cache: Vec<SteepSlot> = vec![None; scaled_rows as usize * scaled_cols as usize];
+    let stride = scaled_cols as usize;
+    let mut steep_at = |next: Idx| -> Option<f64> {
+        let slot = next.x as usize * stride + next.y as usize;
+        if let Some(cached) = steep_cache[slot] {
+            return cached;
+        }
+        let value = t.steep_extend(t.grid.restore_block(next, scale));
+        steep_cache[slot] = Some(value);
+        value
+    };
+
     while let Some(Reverse(entry)) = frontier.pop() {
         let current = entry.index;
         expanded += 1;
@@ -249,11 +296,10 @@ pub fn scale_star(
         rng.shuffle(&mut neighbours);
 
         for next in neighbours {
-            let block = t.grid.restore_block(next, scale);
-            let Some(steep) = t.steep_extend(block) else {
+            let Some(steep) = steep_at(next) else {
                 continue;
             };
-            let new_cost = base + t.grid.cost(current, next) + steep;
+            let new_cost = base + t.grid.cost(current, next) + steep * penalty_k;
             let improved = match cost_so_far.get(&next) {
                 None => true,
                 Some(&old) => new_cost < old,

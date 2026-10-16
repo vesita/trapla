@@ -11,8 +11,6 @@ const OBSTACLE_RATIO_DEAD: f64 = 0.3;
 const WEIGHT_STDDEV: f64 = 0.4;
 const WEIGHT_HEIGHT_DIFF: f64 = 0.3;
 const WEIGHT_AVG_SLOPE: f64 = 0.3;
-/// 综合评分超过它就判陡峭（原 `src/aStar/aStar.cpp:287`）。
-const COMPOSITE_SCORE_DEAD: f64 = 10.0;
 
 /// 地形 = 栅格 + 在其上的查询。
 #[derive(Debug, Clone)]
@@ -85,14 +83,18 @@ impl Terrain {
     /// 求区块 `(fi, se)` 内的平均陡峭度评分。
     ///
     /// 原 `steep_extend(graph, fi, se)`（`src/aStar/aStar.cpp:205-291`）在区块越界或不可行时
-    /// 返回 `-1.0`；Rust 侧映射为 `None`，可行时为 `Some(附加代价)`。
+    /// 返回 `-1.0`；Rust 侧映射为 `None`，可行时为 `Some(陡峭度代价)`。
     ///
-    /// 逐条复刻的判死分支与顺序：
-    /// 1. 两端各自 `orth_near` 钳位后取包围盒；越界 ⇒ `-1`（`aStar.cpp:218`。钳位后只有空图会触发）；
-    /// 2. 障碍占比 `>= 0.3` ⇒ `-1`（`aStar.cpp:243`）；
-    /// 3. `heights` 为空 ⇒ `-1`（`aStar.cpp:247`）；
-    /// 4. 单点 ⇒ `0.0`（`aStar.cpp:251`）；
-    /// 5. `0.4*stddev + 0.3*height_diff + 0.3*avg_slope > 10.0` ⇒ `-1`（`aStar.cpp:283-289`）。
+    /// `None` 只表示**真正不可行**：
+    /// 1. 两端各自 `orth_near` 钳位后取包围盒；越界 ⇒ `None`（`aStar.cpp:218`。钳位后只有空图会触发）；
+    /// 2. 障碍占比 `>= 0.3` ⇒ `None`（`aStar.cpp:243`）；
+    /// 3. `heights` 为空 ⇒ `None`（`aStar.cpp:247`）。
+    ///
+    /// 陡峭度本身**不再是断路**：`0.4*stddev + 0.3*height_diff + 0.3*avg_slope` 一律作为
+    /// `Some(代价)` 返回，由调用方乘权重计入代价（`astar::PENALTY_K`）。原实现的
+    /// `> 10.0 ⇒ -1` 只在 `restore_block` 换算方向错误、这条规则始终空转时才无害；
+    /// 方向修正后它会把粗图按台阶切成条带、让跨条带目标在高层不可达
+    /// （实测与登记见 `doc/known_divergences.md` D4）。单点时评分为 `0.0`（`aStar.cpp:251`）。
     ///
     /// 统计量按原运算顺序：`height == +inf` 记障碍、`height >= 0` 收进 `heights`（其余负数忽略），
     /// 标准差是总体标准差（除以 `n`），`avg_slope` 是**按 `heights` 收集顺序**的相邻绝对差均值。
@@ -119,9 +121,18 @@ impl Terrain {
             return None;
         }
 
+        // 一遍扫窗口，累计统计量，**不物化 `heights`**（原来每次调用都会 push 进一个约 1600 元素的
+        // `Vec`，在 `scale_star` 的每次节点求值里都是一次分配 + 多次扩容）。
+        // 累加顺序与「先收集成 `Vec` 再遍历」完全一致，所以 `mean` / `variance` / `avg_slope`
+        // 的浮点结果逐位相同（`avg_slope` 只对**被收集**的相邻高度作差，`prev` 只在收集时更新）。
         let mut obstacle_count: usize = 0;
         let mut total_count: usize = 0;
-        let mut heights: Vec<f64> = Vec::new();
+        let mut count: usize = 0;
+        let mut sum = 0.0_f64;
+        let mut min_height = f64::INFINITY;
+        let mut max_height = f64::NEG_INFINITY;
+        let mut slope_sum = 0.0_f64;
+        let mut previous: Option<f64> = None;
         for x in min_x..=max_x {
             for y in min_y..=max_y {
                 total_count += 1;
@@ -130,7 +141,14 @@ impl Terrain {
                 if height == f64::INFINITY {
                     obstacle_count += 1;
                 } else if height >= 0.0 {
-                    heights.push(height);
+                    count += 1;
+                    sum += height;
+                    min_height = min_height.min(height);
+                    max_height = max_height.max(height);
+                    if let Some(previous) = previous {
+                        slope_sum += (height - previous).abs();
+                    }
+                    previous = Some(height);
                 }
             }
         }
@@ -138,48 +156,36 @@ impl Terrain {
         if total_count > 0 && (obstacle_count as f64 / total_count as f64) >= OBSTACLE_RATIO_DEAD {
             return None;
         }
-        if heights.is_empty() {
+        if count == 0 {
             return None;
         }
-        if heights.len() == 1 {
+        if count == 1 {
             return Some(0.0);
         }
 
-        let count = heights.len() as f64;
-        let mean = heights.iter().sum::<f64>() / count;
-        let variance = heights
-            .iter()
-            .map(|height| {
-                let diff = height - mean;
-                diff * diff
-            })
-            .sum::<f64>()
-            / count;
-        let stddev = variance.sqrt();
-
-        let mut min_height = f64::INFINITY;
-        let mut max_height = f64::NEG_INFINITY;
-        for &height in &heights {
-            min_height = min_height.min(height);
-            max_height = max_height.max(height);
+        let count = count as f64;
+        let mean = sum / count;
+        // 第二遍按同一顺序累加平方差 —— 与 `heights.iter().map(|h| (h-mean)^2).sum()` 逐位相同。
+        let mut variance_sum = 0.0_f64;
+        for x in min_x..=max_x {
+            for y in min_y..=max_y {
+                let height = self.grid.cell(Idx::new(x, y))?;
+                if height != f64::INFINITY && height >= 0.0 {
+                    let diff = height - mean;
+                    variance_sum += diff * diff;
+                }
+            }
         }
+        let stddev = (variance_sum / count).sqrt();
         let height_diff = max_height - min_height;
+        let avg_slope = slope_sum / (count - 1.0);
 
-        let avg_slope = heights
-            .windows(2)
-            .map(|pair| (pair[1] - pair[0]).abs())
-            .sum::<f64>()
-            / (heights.len() - 1) as f64;
-
-        let composite_score = WEIGHT_STDDEV * stddev
-            + WEIGHT_HEIGHT_DIFF * height_diff
-            + WEIGHT_AVG_SLOPE * avg_slope;
-
-        if composite_score > COMPOSITE_SCORE_DEAD {
-            None
-        } else {
-            Some(composite_score)
-        }
+        // 陡峭度是代价，不是断路：一律返回，由调用方（`astar::PENALTY_K`）加权。
+        Some(
+            WEIGHT_STDDEV * stddev
+                + WEIGHT_HEIGHT_DIFF * height_diff
+                + WEIGHT_AVG_SLOPE * avg_slope,
+        )
     }
 }
 

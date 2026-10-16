@@ -14,7 +14,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use trapla_core::astar::{
-    a_star_search, direction_determine, geometric_decay, geometric_decay_start, scale_star,
+    PENALTY_K, a_star_search, direction_determine, geometric_decay, geometric_decay_start,
+    scale_star, scale_star_with_penalty,
 };
 use trapla_core::error::CoreError;
 use trapla_core::geom::{Dot, Idx, Plane, Point3, fit_plane_up};
@@ -505,12 +506,15 @@ fn steep_extend_dead_branches_and_single_point() {
             .is_none()
     );
 
-    // 分支 4：综合评分 > 10（stddev=15、diff=30、slope=30 ⇒ 24）。
+    // 分支 4：综合评分 24 —— **不再判死**，陡峭度是代价不是断路。
+    // heights=[0,30] ⇒ stddev=15、diff=30、slope=30 ⇒ 0.4*15+0.3*30+0.3*30 = 24。
     let too_steep = Terrain::from_grid(Grid::new(vec![0.0, 30.0], 1, 2).expect("1x2"));
-    assert!(
+    assert_close(
         too_steep
             .steep_extend((Idx::new(0, 0), Idx::new(0, 1)))
-            .is_none()
+            .expect("陡峭不是不可行：必须返回 Some(代价)"),
+        24.0,
+        "steep_extend 陡峭窗口的代价",
     );
 
     // 单点 ⇒ 0.0（`aStar.cpp:251`）。
@@ -544,11 +548,17 @@ fn steep_extend_golden() {
     // 差异区里**结果确实变了**的行 —— 这是 aStar.cpp:212 修正的真实影响面。
     // （= 潜在差异区 − 等值行；下面的断言会校验这个恒等式。）
     let expected_material_deviation_cases: Vec<i32> = vec![11, 22, 26, 27, 29, 35, 36, 37, 39, 42];
+    // 夹具里 `-1`（原实现判死）但现在**不再是 `None`**、且属于「综合评分超阈值」这一类别的行：
+    // 陡峭度由断路改成代价（D4），这是有意分歧。判据是「新代价 > 原阈值 10.0」。
+    let expected_composite_cost_cases: Vec<i32> = vec![7];
+    /// 原实现 `aStar.cpp:287` 的判死阈值，只用来给夹具行**分类**，不是本仓的行为。
+    const GOLDEN_COMPOSITE_DEAD: f64 = 10.0;
 
     let mut checked = 0usize;
     let mut typo_region_cases: Vec<i32> = Vec::new();
     let mut material_deviation_cases: Vec<i32> = Vec::new();
     let mut coincidence_cases: Vec<i32> = Vec::new();
+    let mut composite_cost_cases: Vec<i32> = Vec::new();
     let mut deviation_report: Vec<String> = Vec::new();
 
     for row in &table.rows {
@@ -584,6 +594,9 @@ fn steep_extend_golden() {
             if in_typo_region {
                 coincidence_cases.push(case);
             }
+        } else if want < 0.0 && got.is_some_and(|score| score > GOLDEN_COMPOSITE_DEAD) {
+            // 有意分歧（D4）：夹具的 -1 来自「综合评分 > 10 判死」，本仓改成 `Some(代价)`。
+            composite_cost_cases.push(case);
         } else {
             assert!(
                 in_typo_region,
@@ -610,7 +623,11 @@ fn steep_extend_golden() {
         "aStar.cpp:212 修正的真实影响面变了"
     );
     assert_eq!(
-        checked + material_deviation_cases.len(),
+        composite_cost_cases, expected_composite_cost_cases,
+        "「陡峭度断路 → 代价」这一类别的夹具行变了（D4）"
+    );
+    assert_eq!(
+        checked + material_deviation_cases.len() + composite_cost_cases.len(),
         46,
         "steep_extend.csv 行数"
     );
@@ -734,4 +751,239 @@ fn fit_plane_up_and_normal_angle_analytic_values() {
         fit_plane_up(&[Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)]),
         Err(CoreError::DegeneratePlane)
     ));
+}
+
+// ---------------------------------------------------------------- 陡峭度 = 代价（D4 / T6f）
+
+/// 读真实地图 `data/csv/map.csv`（1000 × 3000，无表头）成 [`Terrain`]。
+fn load_real_map() -> Terrain {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/csv/map.csv");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("读不到 {}: {e}", path.display()));
+    let mut cells = Vec::new();
+    let (mut rows, mut cols) = (0_usize, 0_usize);
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut width = 0_usize;
+        for token in line.split(',') {
+            cells.push(token.trim().parse::<f64>().expect("map.csv 必须是纯数值"));
+            width += 1;
+        }
+        rows += 1;
+        cols = width;
+    }
+    assert_eq!((rows, cols), (1000, 3000), "map.csv 形状变了");
+    Terrain::from_grid(Grid::new(cells, rows, cols).expect("1000x3000"))
+}
+
+/// 把 [`scale_star`] 返回的引导路径映射回**缩放区块**序列。
+///
+/// 路径两端是原始起终点（搜索内用 `ceil(v * scale)` 得到区块 `ss`/`sg`），
+/// 中间节点是 `restore_dot(block)` 的输出，也就是区块**中心** `(block + 0.5) / scale`，
+/// 所以用 `trunc(v * scale)` 求逆。两种映射不能混用 —— 用 `ceil` 反解中心会系统性偏移一位。
+fn path_blocks(path: &[Idx], scale: f64) -> Vec<Idx> {
+    let last = path.len().saturating_sub(1);
+    path.iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let inverse = |v: i32| -> i32 {
+                if i == 0 || i == last {
+                    trapla_core::geom::index_scale(v as f64, scale)
+                } else {
+                    (v as f64 * scale) as i32
+                }
+            };
+            Idx::new(inverse(n.x), inverse(n.y))
+        })
+        .collect()
+}
+
+/// 区块上的陡峭度代价（`Terrain::steep_extend` 的返回值）。
+fn block_score(terrain: &Terrain, block: Idx, scale: f64) -> f64 {
+    terrain
+        .steep_extend(terrain.grid.restore_block(block, scale))
+        .expect("真实地图没有障碍/越界窗口")
+}
+
+/// 按 [`scale_star`] 自己的代价口径复算一条区块路径的总代价：`Σ (cost + k * steep)`。
+fn path_cost(terrain: &Terrain, blocks: &[Idx], scale: f64, k: f64) -> f64 {
+    blocks
+        .windows(2)
+        .map(|w| terrain.grid.cost(w[0], w[1]) + k * block_score(terrain, w[1], scale))
+        .sum()
+}
+
+/// 陡峭度是**代价**，不是断路：同一 seed 下 `PENALTY_K > 0` 与 `PENALTY_K = 0` 的引导路径不同，
+/// 且加权那次走过的陡峭度总量与 K 加权总代价都严格更低（高陡峭度节点被绕开）。
+///
+/// 同时打印 `PENALTY_K` 的敏感性（`0 / 1 / PENALTY_K / 10 / 30`）与两条路径的逐节点陡峭度，
+/// 作为 D4 里选 K 的实测依据。
+///
+/// 负向对照：把 `PENALTY_K` 设成 `0.0`，两次调用就是同一个搜索 ⇒ 下面的 `assert_ne!` 变红。
+#[test]
+fn terrain_steepness_changes_the_route() {
+    let terrain = load_real_map();
+    let scale = 1.0 / 40.0;
+
+    for (start, goal) in [
+        (Idx::new(0, 0), Idx::new(500, 500)),
+        (Idx::new(500, 500), Idx::new(900, 1200)),
+    ] {
+        let mut free_blocks: Vec<Idx> = Vec::new();
+        let mut free_scores: Vec<f64> = Vec::new();
+        let mut cost_blocks: Vec<Idx> = Vec::new();
+        let mut cost_scores: Vec<f64> = Vec::new();
+
+        for k in [0.0, 1.0, PENALTY_K, 10.0, 30.0] {
+            let mut rng = Rng::from_seed(42);
+            let search = scale_star_with_penalty(&terrain, start, goal, scale, &mut rng, k)
+                .unwrap_or_else(|| panic!("{start:?}->{goal:?} 在 K={k} 时不可达"));
+            let blocks = path_blocks(&search.path, scale);
+            let scores: Vec<f64> = blocks
+                .iter()
+                .map(|b| block_score(&terrain, *b, scale))
+                .collect();
+            let sum: f64 = scores.iter().sum();
+            let max = scores.iter().cloned().fold(f64::MIN, f64::max);
+            let steep_nodes = scores.iter().filter(|s| **s > 10.0).count();
+            println!(
+                "{start:?}->{goal:?} K={k:<4} 节点={:<3} Σsteep={sum:8.4} max={max:7.4} 陡峭节点(>10)={steep_nodes} 加权代价(K={k})={:.4}",
+                blocks.len(),
+                path_cost(&terrain, &blocks, scale, k)
+            );
+            if k == 0.0 {
+                free_blocks = blocks.clone();
+                free_scores = scores.clone();
+            }
+            if k == PENALTY_K {
+                cost_blocks = blocks.clone();
+                cost_scores = scores.clone();
+            }
+        }
+
+        println!(
+            "  K=0 逐节点 steep: {:?}",
+            free_scores
+                .iter()
+                .map(|s| (s * 1000.0).round() / 1000.0)
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "  K={PENALTY_K} 逐节点 steep: {:?}",
+            cost_scores
+                .iter()
+                .map(|s| (s * 1000.0).round() / 1000.0)
+                .collect::<Vec<_>>()
+        );
+
+        assert_ne!(
+            free_blocks, cost_blocks,
+            "{start:?}->{goal:?}: 陡峭度代价没有改变路径 —— 地形没起作用（PENALTY_K 是不是 0？）"
+        );
+        let sum_free: f64 = free_scores.iter().sum();
+        let sum_cost: f64 = cost_scores.iter().sum();
+        assert!(
+            sum_cost < sum_free,
+            "{start:?}->{goal:?}: K={PENALTY_K} 的路径陡峭度总量没有更低（{sum_cost} vs {sum_free}）"
+        );
+        let weighted_free = path_cost(&terrain, &free_blocks, scale, PENALTY_K);
+        let weighted_cost = path_cost(&terrain, &cost_blocks, scale, PENALTY_K);
+        assert!(
+            weighted_cost < weighted_free,
+            "{start:?}->{goal:?}: 在 K={PENALTY_K} 的口径下，K=0 的路径反而更便宜\
+             （{weighted_free} vs {weighted_cost}）—— 说明 K 的代价没有真的进入搜索"
+        );
+    }
+}
+
+/// 邻居洗牌仍在跑，但它只在**最优解不唯一**时才决定结果。
+///
+/// 判定依据（三条实测）：
+/// 1. `scale_star` 确实消耗了 `rng`（同 seed 的两个实例，跑过搜索的那个后续洗牌结果不同）
+///    ⇒ 不是「洗牌被短路」；
+/// 2. 平坦合成图 + `k = 0`：所有步代价相同 ⇒ 最优解不唯一 ⇒ 不同 seed 给出**不同**路径
+///    ⇒ 洗牌对结果有影响；
+/// 3. 真实地图 + `PENALTY_K`：`steep` 取连续值、代价几乎无并列 ⇒ 最优 guide 唯一
+///    ⇒ 不同 seed 路径逐点相同（`expanded` 也相同，因为优先级已无并列可争）。
+#[test]
+fn shuffle_runs_and_only_decides_tied_optima() {
+    let terrain = load_real_map();
+    let scale = 1.0 / 40.0;
+    let (start, goal) = (Idx::new(0, 0), Idx::new(500, 500));
+
+    // 1) 搜索消耗了 rng
+    let mut untouched = Rng::from_seed(42);
+    let mut used = Rng::from_seed(42);
+    let _ = scale_star(&terrain, start, goal, scale, &mut used).expect("可达");
+    let mut from_untouched = [0_u8, 1, 2, 3, 4, 5, 6, 7];
+    let mut from_used = from_untouched;
+    untouched.shuffle(&mut from_untouched);
+    used.shuffle(&mut from_used);
+    assert_ne!(
+        from_untouched, from_used,
+        "scale_star 没有消耗 rng —— 邻居洗牌被短路了"
+    );
+
+    // 2) 平坦图 + k = 0：最优解不唯一，seed 决定路径
+    let flat = Terrain::from_grid(Grid::new(vec![10.0; 100 * 100], 100, 100).expect("100x100"));
+    let flat_paths: Vec<Vec<Idx>> = [42_u64, 7, 2024]
+        .iter()
+        .map(|seed| {
+            let mut rng = Rng::from_seed(*seed);
+            scale_star_with_penalty(&flat, Idx::new(0, 0), Idx::new(90, 90), 0.1, &mut rng, 0.0)
+                .expect("平坦图可达")
+                .path
+        })
+        .collect();
+    println!(
+        "平坦图 seed 42/7/2024 路径点数 = {:?}，42==7? {}",
+        flat_paths.iter().map(Vec::len).collect::<Vec<_>>(),
+        flat_paths[0] == flat_paths[1]
+    );
+    assert!(
+        flat_paths[0] != flat_paths[1] || flat_paths[0] != flat_paths[2],
+        "平坦图上 seed 竟然不影响路径 —— 洗牌对结果无影响"
+    );
+
+    // 3) 真实地图 + PENALTY_K：最优解唯一，结果与 seed 无关
+    let mut routes: Vec<Vec<Idx>> = Vec::new();
+    let mut expansions: Vec<usize> = Vec::new();
+    for seed in [42_u64, 7, 2024] {
+        let mut rng = Rng::from_seed(seed);
+        let search = scale_star(&terrain, start, goal, scale, &mut rng).expect("可达");
+        expansions.push(search.expanded);
+        routes.push(search.path);
+    }
+    println!("真实地图 seed 42/7/2024 的 expanded = {expansions:?}");
+    assert_eq!(routes[0], routes[1], "最优 guide 唯一 ⇒ 路径应与 seed 无关");
+    assert_eq!(routes[0], routes[2], "最优 guide 唯一 ⇒ 路径应与 seed 无关");
+}
+
+/// 记忆化依赖的不变量：`steep_extend` 是**纯函数** —— 同一区块重复求值逐位相同。
+///
+/// `scale_star_with_penalty` 的惰性缓存（按缩放节点索引）正因为这条才**只影响性能、不影响语义**；
+/// 缓存的键也只有 `next` 一个输入（`restore_block(next, scale)` 不依赖从哪个节点走来）。
+#[test]
+fn steep_extend_is_pure_so_memoization_is_safe() {
+    let terrain = load_real_map();
+    let scale = 1.0 / 40.0;
+    for node in [
+        Idx::new(0, 0),
+        Idx::new(13, 13),
+        Idx::new(23, 30),
+        Idx::new(24, 74),
+    ] {
+        let block = terrain.grid.restore_block(node, scale);
+        let first = terrain.steep_extend(block);
+        let second = terrain.steep_extend(block);
+        match (first, second) {
+            (Some(a), Some(b)) => {
+                assert_close(a, b, &format!("区块 {block:?} 重复求值不一致"));
+            }
+            (None, None) => {}
+            _ => panic!("区块 {block:?}: 重复求值的可行性判定不一致"),
+        }
+    }
 }

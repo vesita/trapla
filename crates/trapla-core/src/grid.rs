@@ -143,24 +143,35 @@ impl Grid {
     }
 
     /// 把缩放图上的区块 `block` 还原成原图上的两个角索引，返回 `(近端, 远端)`：
-    /// `近端 = clamp(ceil(block.x/b.y * scale))`、`远端 = clamp(ceil((block.x+1)/(block.y+1) * scale))`
-    /// （原 `SqPlane::restore(const Intex&, scale)`，`src/utils/geometry.cpp:925-929`，
-    /// 两端各自 `orth_near` 钳位）。
+    /// `近端 = clamp(trunc(block.x / scale), trunc(block.y / scale))`、
+    /// `远端 = clamp(trunc((block.x + 1) / scale), trunc((block.y + 1) / scale))`。
     ///
-    /// 这里**只采用 `ceil` 这一套语义**（即 `Intex::scale` → `index_scale`）。原仓的
-    /// `SqDot` 重载（`geometry.cpp:919-923`）在同一个函数体里混用了两个同名 `scale()`：
-    /// `block` 是 const 引用 → const 版（浮点乘法 + 四舍五入），而临时的
-    /// `SqDot(block.x+1, block.y+1)` 是非 const → 非 const 版（`ceil`）。`restore.csv` 里
-    /// `mode=dot` 与 `mode=int` 在 `scale=0.025` 的 7 组上不一致，就是那个 bug 的痕迹；
-    /// 本重写取自洽的 `int` 语义，`mode=dot` 的差异是**有意不复现**的。
+    /// 换算方向与 [`Grid::scale_down`] / [`Idx::central_restore`] **一致**：`scale` 是
+    /// 「原始尺寸 × scale = 缩放尺寸」的那个比例，所以从缩放区块回到原图坐标要**除**
+    /// （`scale_down` 的采样中心是 `(i + 0.5) / scale`，`central_restore` 是 `x / scale + 0.5 / scale`）。
+    /// 截断向零，对齐原实现的 `static_cast<int>`（`src/utils/geometry.cpp:150-153` 同款转换）。
+    ///
+    /// 远端取 `(block + 1) / scale` 而不是减一：区块覆盖的是半开区间
+    /// `[block/scale, (block+1)/scale)`，取两端角后由调用方（`Terrain::steep_extend`）
+    /// 按闭区间 `min..=max` 扫描，所以相邻区块在边界格上有一格重叠。
+    ///
+    /// 钳位沿用原 `orth_near`（`src/utils/geometry.cpp:549-553`：`max(0, min(v, size - 1))`），未改。
+    ///
+    /// 与 [`Grid::restore_dot`] 的关系：两者现在**方向一致**（都从缩放坐标除回原图坐标），
+    /// 区别只在落点 —— 本函数给区块的两个**角**，`restore_dot` 给区块**中心**落格后的一点。
+    ///
+    /// 原 C++ 的 `SqPlane::restore`（`src/utils/geometry.cpp:919-929`）走的是**乘**
+    /// （`Intex::scale` → `index_scale` = `ceil(v * scale)`），与它自己的 `scale_graph` 方向相反：
+    /// 每个缩放区块都被映射回地图左上角同一小块，`steep_extend` 因而恒不判死、高层地形约束空转。
+    /// 这是原实现的缺陷，不是移植引入的；登记见 `doc/known_divergences.md` D4。
     pub fn restore_block(&self, block: Idx, scale: f64) -> (Idx, Idx) {
         let near = self.clamp(Idx::new(
-            index_scale(block.x as f64, scale),
-            index_scale(block.y as f64, scale),
+            (block.x as f64 / scale) as i32,
+            (block.y as f64 / scale) as i32,
         ));
         let far = self.clamp(Idx::new(
-            index_scale(block.x as f64 + 1.0, scale),
-            index_scale(block.y as f64 + 1.0, scale),
+            ((block.x as f64 + 1.0) / scale) as i32,
+            ((block.y as f64 + 1.0) / scale) as i32,
         ));
         (near, far)
     }
