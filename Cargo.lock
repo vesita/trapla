@@ -5452,6 +5452,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "trapla-lab"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "trapla-core",
+ "trapla-io",
+]
+
+[[package]]
 name = "trapla-viz"
 version = "0.1.0"
 dependencies = [

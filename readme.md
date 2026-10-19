@@ -89,6 +89,11 @@ Rust 测试分四层：
 - `crates/trapla-core/tests/port_verification.rs`：T7 独立复核（不依赖作者测试的逐行对照 + 洗牌/seed 命题 + NoPath 分层）；
 - `crates/trapla-io/tests/`、`crates/trapla-cli/tests/`：CSV 往返与 CLI 端到端。
 
+## 算法测试台
+
+无头算法测试台 `crates/trapla-lab/`（确定性场景、**独立**硬约束校验、批量跑分与回归门禁）的用法、
+判据、场景清单与加算法的方式见 `doc/lab.md`。
+
 ## 可视化
 
 ```bash

@@ -1,0 +1,17 @@
+[package]
+name = "trapla-lab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "trapla 无头算法测试台：确定性场景 / 独立硬约束校验 / 批量跑分与回归门禁"
+
+[[bin]]
+name = "trapla-lab"
+path = "src/main.rs"
+
+[dependencies]
+trapla-core.workspace = true
+trapla-io.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true

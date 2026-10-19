@@ -2,7 +2,13 @@
 resolver = "2"
 members = ["crates/*"]
 # viz 不在 default-members 里：默认构建/检查不拉起可视化前端。
-default-members = ["crates/trapla-core", "crates/trapla-io", "crates/trapla-cli"]
+# lab 是无头测试台（不依赖 Bevy），随默认成员一起构建。
+default-members = [
+    "crates/trapla-core",
+    "crates/trapla-io",
+    "crates/trapla-cli",
+    "crates/trapla-lab",
+]
 
 [workspace.package]
 version = "0.1.0"
