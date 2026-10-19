@@ -338,22 +338,10 @@ pub fn foot_corners(position: Dot, rz: f64, shape: &ShapeLimits) -> [Dot; 4] {
     let w_sin = half_width * rz.sin();
 
     [
-        Dot::new(
-            position.x() + l_cos - w_sin,
-            position.y() + l_sin + w_cos,
-        ),
-        Dot::new(
-            position.x() + l_cos + w_sin,
-            position.y() + l_sin - w_cos,
-        ),
-        Dot::new(
-            position.x() - l_cos + w_sin,
-            position.y() - l_sin - w_cos,
-        ),
-        Dot::new(
-            position.x() - l_cos - w_sin,
-            position.y() - l_sin + w_cos,
-        ),
+        Dot::new(position.x() + l_cos - w_sin, position.y() + l_sin + w_cos),
+        Dot::new(position.x() + l_cos + w_sin, position.y() + l_sin - w_cos),
+        Dot::new(position.x() - l_cos + w_sin, position.y() - l_sin - w_cos),
+        Dot::new(position.x() - l_cos - w_sin, position.y() - l_sin + w_cos),
     ]
 }
 
@@ -399,6 +387,47 @@ fn rebuilt_rz(
     }
 }
 
+/// 初始两足状态：`(每只脚的 (位置, rz), 按脚序的 rz)`，脚序由 `parity0_is_left` 决定。
+fn initial_state(start: Dot, options: &ValidateOptions) -> ([(Dot, f64); 2], [f64; 2]) {
+    let [(a_pos, a_rz), (b_pos, b_rz)] = initial_feet(start, &options.limits);
+    if options.parity0_is_left {
+        ([(a_pos, a_rz), (b_pos, b_rz)], [a_rz, b_rz])
+    } else {
+        ([(b_pos, b_rz), (a_pos, a_rz)], [b_rz, a_rz])
+    }
+}
+
+/// 逐点重建落足的**姿态序列**：返回与 `path` 等长的 `(位置, rz)`。
+///
+/// 第 `i` 项 = 点位 `path[i]` 落定后该脚的朝向。这是朝向推进规则的**唯一实现处**：
+/// [`validate_path`] 也只从这个序列取 `rz`，所以可视化画出来的朝向与校验器判的朝向
+/// 必然同源（同 [`initial_feet`]、同 [`rebuilt_rz`]、同一「同脚上一点」下标规则）。
+///
+/// 非有限坐标的那一步不更新朝向（与校验器一致，它在那一步直接跳过）。
+pub fn foot_poses(path: &[Dot], start: Dot, options: &ValidateOptions) -> Vec<(Dot, f64)> {
+    let (initial, mut rz) = initial_state(start, options);
+    let mut poses = Vec::with_capacity(path.len());
+    for (index, current) in path.iter().enumerate() {
+        let foot = index % 2;
+        if current.x().is_finite() && current.y().is_finite() {
+            let old_pos = if index >= 2 {
+                path[index - 2]
+            } else {
+                initial[foot].0
+            };
+            rz[foot] = rebuilt_rz(
+                options.rz,
+                rz[foot],
+                old_pos,
+                *current,
+                options.limits.active_distance,
+            );
+        }
+        poses.push((*current, rz[foot]));
+    }
+    poses
+}
+
 /// 校验一条点位序列。
 ///
 /// `terrain` 为 `None` 时跳过可站立 / 法向角检查，并在 `skipped` 里显式登记。
@@ -418,17 +447,14 @@ pub fn validate_path(
         );
     }
 
-    let [(a_pos, a_rz), (b_pos, b_rz)] = initial_feet(start, &limits);
-    let (initial, mut rz) = if options.parity0_is_left {
-        ([(a_pos, a_rz), (b_pos, b_rz)], [a_rz, b_rz])
-    } else {
-        ([(b_pos, b_rz), (a_pos, a_rz)], [b_rz, a_rz])
-    };
+    let (initial, mut rz) = initial_state(start, options);
 
     let mut steps = Vec::with_capacity(path.len());
     let mut strict_counts: BTreeMap<Violation, usize> = BTreeMap::new();
     let mut hard_counts: BTreeMap<Violation, usize> = BTreeMap::new();
     let linear_margin = options.linear_margin();
+    // 朝向推进只走 `foot_poses` 这一个实现（可视化也用同一份）。
+    let poses = foot_poses(path, start, options);
 
     for (index, current) in path.iter().enumerate() {
         let foot = index % 2;
@@ -491,13 +517,7 @@ pub fn validate_path(
             }
         }
 
-        let new_rz = rebuilt_rz(
-            options.rz,
-            rz[foot],
-            old_pos,
-            *current,
-            limits.active_distance,
-        );
+        let new_rz = poses[index].1;
         let corners = foot_corners(*current, new_rz, &limits.shape);
         let center_line = Line::from_point_angle(support_pos, support_rz);
         let min_dist = corners
@@ -634,11 +654,7 @@ pub struct SensitivityReport {
     pub parity_flip: Probe,
 }
 
-fn probe(
-    change: String,
-    primary: &ValidationReport,
-    alternative: &ValidationReport,
-) -> Probe {
+fn probe(change: String, primary: &ValidationReport, alternative: &ValidationReport) -> Probe {
     Probe {
         change,
         hard_violation_steps: alternative.hard_violation_steps,
@@ -674,18 +690,18 @@ pub fn sensitivity(
 
     SensitivityReport {
         rz_convention_flip: probe(
-            format!(
-                "rz 约定 {} -> {}",
-                options.rz.name(),
-                other_rz.rz.name()
-            ),
+            format!("rz 约定 {} -> {}", options.rz.name(), other_rz.rz.name()),
             &primary,
             &rz_alternative,
         ),
         parity_flip: probe(
             format!(
                 "偶数下标 {} -> {}",
-                if options.parity0_is_left { "左脚" } else { "右脚" },
+                if options.parity0_is_left {
+                    "左脚"
+                } else {
+                    "右脚"
+                },
                 if flipped_parity.parity0_is_left {
                     "左脚"
                 } else {
@@ -944,7 +960,8 @@ mod tests {
                         .plane_at(&points)
                         .is_ok_and(|plane| plane.normal_angle() < limits.max_normal_angle)
                 };
-                let reference_standable = Foot::new(*current, candidate_rz, shape.into()).standable(&terrain);
+                let reference_standable =
+                    Foot::new(*current, candidate_rz, shape.into()).standable(&terrain);
                 standable_checked += 1;
                 if local_standable(candidate_rz) != reference_standable {
                     standable_mismatches += 1;
@@ -994,5 +1011,78 @@ mod tests {
         }
         // 三种约定下报告的是同一批步数（约定只影响几何量，不影响步数）。
         assert_eq!(point_counts, vec![4, 4, 4]);
+    }
+
+    /// `foot_poses` 与 `validate_path` 的朝向重建必须同源：末态逐位相等。
+    #[test]
+    fn foot_poses_agree_with_validation_final_rz() {
+        let path = vec![
+            Dot::new(20.0, -2.6),
+            Dot::new(20.0, 2.6),
+            Dot::new(40.0, -2.6),
+            Dot::new(40.0, 2.6),
+            Dot::new(60.0, -2.6),
+            Dot::new(60.0, 2.6),
+        ];
+        let start = Dot::new(0.0, 0.0);
+        for convention in [
+            RzConvention::Raw,
+            RzConvention::Sticky,
+            RzConvention::Smoothed,
+        ] {
+            let options = ValidateOptions {
+                rz: convention,
+                ..ValidateOptions::canonical()
+            };
+            let report = validate_path(&path, start, None, None, &options);
+            let poses = foot_poses(&path, start, &options);
+            let mut last = [f64::NAN; 2];
+            for (index, (_, rz)) in poses.iter().enumerate() {
+                last[index % 2] = *rz;
+            }
+            assert_eq!(poses.len(), path.len());
+            assert_eq!(
+                last,
+                report.final_rz,
+                "{} 约定下 foot_poses 末态与校验器不一致",
+                convention.name()
+            );
+        }
+    }
+
+    /// raw（步向直接当朝向）与 smoothed（提交语义）在同一条有转弯的路径上必须不同
+    /// —— 这是 viz 那条「不许用 raw 画足」负向对照的语义依据。
+    #[test]
+    fn raw_and_smoothed_headings_differ_on_turning_path() {
+        let path = vec![
+            Dot::new(0.0, 0.0),
+            Dot::new(0.0, 6.0),
+            Dot::new(20.0, 0.0),
+            Dot::new(20.0, 6.0),
+            // 同一只脚上一步朝 +x，这一步朝 +y：raw 直接跳到 90°，
+            // smoothed 只走一半（HEADING_SMOOTHING = 0.5）→ 差 ~45°。
+            Dot::new(20.0, 40.0),
+            Dot::new(20.0, 46.0),
+            Dot::new(0.0, 80.0),
+            Dot::new(0.0, 86.0),
+        ];
+        let raw = foot_poses(
+            &path,
+            Dot::new(0.0, 0.0),
+            &ValidateOptions {
+                rz: RzConvention::Raw,
+                ..ValidateOptions::canonical()
+            },
+        );
+        let smoothed = foot_poses(&path, Dot::new(0.0, 0.0), &ValidateOptions::canonical());
+        let max_diff = raw
+            .iter()
+            .zip(&smoothed)
+            .map(|(a, b)| wrap_angle(a.1 - b.1).abs())
+            .fold(0.0_f64, f64::max);
+        assert!(
+            max_diff > 0.5,
+            "raw 与 smoothed 的最大朝向差只有 {max_diff} rad，负向对照失去意义"
+        );
     }
 }
