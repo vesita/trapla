@@ -8,7 +8,7 @@
 
 | crate | 职责 | 关键模块 |
 |---|---|---|
-| `trapla-core` | 规划内核：没有任何 IO/CLI 依赖，纯计算 | `config`（阈值唯一事实源）、`geom`（点/线/平面/拟合）、`grid`（栅格、邻域、代价、降采样、区块还原）、`terrain`（法向角、拟合平面、陡峭度）、`astar`（曼哈顿 A* + 缩放图 A* + 衰减/指向点）、`foot`（足几何、覆盖格、可站立、滑移）、`robot`（规划主循环）、`metrics`（猫步指标）、`rng`（确定性随机源）、`error`（错误分类） |
+| `trapla-core` | 规划内核：没有任何 IO/CLI 依赖，纯计算 | `config`（阈值唯一事实源）、`constraints`（硬约束唯一实现点，§3.1）、`geom`（点/线/平面/拟合）、`grid`（栅格、邻域、代价、降采样、区块还原）、`terrain`（法向角、拟合平面、陡峭度）、`astar`（曼哈顿 A* + 缩放图 A* + 衰减/指向点）、`foot`（足几何、覆盖格、可站立、滑移）、`robot`（规划主循环）、`metrics`（猫步指标）、`rng`（确定性随机源）、`error`（错误分类） |
 | `trapla-io` | CSV 读写与 IO 错误分类 | `csv`（矩阵/`x,y` 点位读写）、`IoError`（`Io`/`Format{line}`/`Shape`/`Core`） |
 | `trapla-cli` | 命令行入口与退出码映射 | `plan`、`analyze`、`version`；退出码 0/1/2/3（见 `readme.md`） |
 | `trapla-viz` | Bevy 可视化：3D 地形 + 落足点回放 + 指标面板 | `cli`（交互 / `--headless-selftest` / `--screenshot`）、`scene`、`metrics` |
@@ -54,6 +54,26 @@ data/csv/map.csv（无表头 1000×3000 数值）
 
 `astar::PENALTY_K = 3.0`（陡峭度代价权重）是**算法参数**而非物理阈值，按其定义写在 `astar.rs`。
 
+### 3.1 硬约束的唯一实现点与两种姿态语义
+
+四条硬约束（步长 / 转向角 / 双足间距 / 足可站立）只有一份实现，在
+`crates/trapla-core/src/constraints.rs`：输入是**显式给出的足位姿**（位置 + `rz`），
+逐条返回「是否满足 + 裕度 + 是哪一条」；模块自己**从不推导姿态**。「足可站立」拆成
+「覆盖格全在图内」与「法向角 < 20°」两条判定，与独立校验器 `trapla-lab` 的越界类别对齐。
+
+姿态推导在 `robot.rs` 里只有两处命名入口，调用点必须显式选一个 —— 这是把
+「拿哪种姿态判」摆到明面上的接缝：
+
+| 姿态 | 入口 | `rz` 语义 | 用在哪 |
+|---|---|---|---|
+| 候选姿态 | `Robot::next` | `= 步向` | golden 冻结谓词 `satisfy_*` / `position_check`（语义逐位不变） |
+| 提交姿态 | `Robot::next_committed` | 按 `HEADING_SMOOTHING` 向步向插值 | `walk_update` 实际提交的姿态；**候选取舍一律按它判**（`position_check_committed` / `standable_committed`） |
+
+两者最多差半个转角，而间距与法向角都读 `rz`：用前者判、用后者提交，就会让
+「判过的姿态」≠「执行的姿态」（实测 16/62 步越界，登记为 `known_divergences.md` D6）。
+判据来源是**独立**的 `trapla-lab` 校验器（`doc/lab.md`）：它只从点位序列按提交语义重算 `rz`，
+不复用 core 的任何谓词。
+
 ## 4 golden 夹具：来源与用途
 
 - 位置：`crates/trapla-core/tests/golden/`，22 个文件（21 个 CSV + `golden_summary.txt`）。
@@ -91,11 +111,18 @@ data/csv/map.csv（无表头 1000×3000 数值）
 
 ## 6 走猫步的现状
 
-- 已做：D+B 策略（足印分道 + 朝向解耦），`same_foot_turn` 中位从基线的 15–23.76° 降到 ≈0.04°。
-- **未修好**：主判据 `proper_crossings`（左右脚折线严格交叉对数）目标 **= 0**，实测 **4**；
-  横向间距 min 目标 **≥ 3.0**，实测 **0.82**；步数相对基线 +24%（指引 ≤ +10%）。
+- 已做：D+B 策略（足印分道 + 朝向解耦），`same_foot_turn` 中位从基线的 15–23.76° 降到 **−0.252°**
+  （D6 前为 +0.044°；两者都 ≪ 1°，D+B 的成果未丢）。
+- **未修好**：主判据 `proper_crossings`（左右脚折线严格交叉对数）目标 **= 0**，实测 **6**；
+  横向间距 min 目标 **≥ 3.0**，实测 **0.5824**；步数相对**原始**基线仍 **+24%**
+  （D6 把步数从 62 抬到 66，即 +6.5%；指引 ≤ +10%）。
+- **D6 的代价与交换**（候选判定改按提交姿态，见 `doc/known_divergences.md` D6）：候选集缩小，
+  实测 `will_feet_cross` 触发次数 5 → 20，三项软指标随之变差
+  （`proper_crossings` 4 → 6、横向间距 min 0.8205 → 0.5824、`same_foot_turn` 中位 +0.044° → −0.252°）；
+  作为交换，硬约束严格越界 **16 → 0**（独立校验器 `trapla-lab`），
+  `goal_error` 13.3966 → 12.4556、`total_length` 1331.18 → 1325.75。
 - 判据表与基线区间：`doc/catwalk_diagnosis.md` §④；方案与实施：`doc/catwalk_design.md`、`doc/catwalk_fix.md`；
-  现状登记：`doc/known_divergences.md` D4「仍未达成 / 未决」。
+  现状登记：`doc/known_divergences.md` D4「仍未达成 / 未决」、**D6「候选判定改用提交姿态 + 收尾落足门禁」**。
 
 ## 7 确定性与错误边界
 

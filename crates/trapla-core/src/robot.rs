@@ -1,6 +1,7 @@
 //! 规划器主循环：在 [`Terrain`] 上交替落左右脚，产出点位序列。
 
 use crate::config::RobotConfig;
+use crate::constraints;
 use crate::error::{CoreError, Result};
 use crate::foot::Foot;
 use crate::geom::{Dot, Line};
@@ -147,6 +148,9 @@ impl Robot {
     ///
     /// **语义被 golden 钉死**：`satisfy_spacing`/`satisfy_turn` 内部都调用本函数做几何判定，
     /// 所以这里保持原实现不动。路线 B 的朝向解耦在提交路径 [`Robot::next_committed`] 里做。
+    ///
+    /// 姿态语义：本函数给的是**候选姿态**（`rz = 步向`）——它与实际提交的姿态不同，
+    /// 只用于冻结谓词与 golden 对照；候选过滤必须用 [`Robot::next_committed`]。
     pub fn next(&self, new_pos: Dot) -> Foot {
         let sw = self.swing_foot();
         let stride = sw.position.distance(new_pos);
@@ -165,7 +169,10 @@ impl Robot {
     /// π/12 网格抖动，抖动又被写进 `rz`，下一轮候选窗口就以它为参考。物理含义是
     /// 「一步最多把足朝向拉向实际步向几成」；平滑系数 1.0 = 原行为。敏感性见
     /// `doc/catwalk_design.md`。
-    fn next_committed(&self, new_pos: Dot) -> Foot {
+    ///
+    /// 这是**执行的姿态**：`walk_update` 提交它，`find_path` 的候选过滤必须按它判
+    /// （见 [`Robot::position_check_committed`]）。与 [`Robot::next`] 最多差半个转角。
+    pub fn next_committed(&self, new_pos: Dot) -> Foot {
         let sw = self.swing_foot();
         let stride = sw.position.distance(new_pos);
         let new_rz = if stride >= self.config.active_distance {
@@ -187,9 +194,9 @@ impl Robot {
 
     /// 检查新位置是否满足步长约束（原 `satisfy_stride`，`src/robot/robot.cpp:228-230`）。
     ///
-    /// 严格小于 `<`：`distance < max_stride`。
+    /// 严格小于 `<`：`distance < max_stride`。判定在 [`constraints::stride`]；步长与候选姿态无关。
     pub fn satisfy_stride(&self, new_pos: Dot) -> bool {
-        self.distance(new_pos) < self.config.max_stride
+        constraints::stride(new_pos, self.swing_foot().position, &self.config).satisfied
     }
 
     /// 检查新位置是否满足转角约束（原 `satisfy_turn`，`src/robot/robot.cpp:232-235`）。
@@ -205,45 +212,76 @@ impl Robot {
     ///
     /// 该项与冻结夹具 `tests/golden/satisfy_turn.csv` 的 case 16/24/26 三行有意分歧，
     /// 逐行手算与理由见 `doc/known_divergences.md` 与 `tests/robot_golden.rs`。
+    ///
+    /// 判定在 [`constraints::turn`]；同样与候选姿态无关（用的是步向与支撑脚 `rz`）。
     pub fn satisfy_turn(&self, new_pos: Dot) -> bool {
-        let angle = crate::metrics::wrap_angle(
-            self.swing_foot().position.angle(new_pos) - self.support_foot().rz,
-        );
-        angle < self.config.max_turn && angle > -self.config.max_turn
+        constraints::turn(
+            new_pos,
+            self.swing_foot().position,
+            self.support_foot().rz,
+            &self.config,
+        )
+        .satisfied
     }
 
     /// 检查新位置是否满足足部间距约束（原 `satisfy_spacing`，`src/robot/robot.cpp:193-226`）。
     ///
     /// 按原实现语义：闭区间 + 浮点容差（`SEPARATION_EPS = 1e-3`）。
     /// `spacing = 摆动脚四角到支撑脚中心线的最小垂距 - 支撑脚半宽`，夹紧到 `>= 0`。
+    ///
+    /// **姿态口径 = [`Robot::next`]（步向姿态）**：这是 golden 夹具钉住的旧口径，保持不变。
+    /// 间距与姿态有关，所以 `find_path` 的候选过滤**不许**用本方法，必须用
+    /// [`Robot::position_check_committed`]（对提交姿态判定）。
     pub fn satisfy_spacing(&self, new_pos: Dot) -> bool {
-        let support_foot = self.support_foot();
-        let new_foot = self.next(new_pos);
-        let points = new_foot.corners();
-
-        let half_width = support_foot.shape.half_width();
-        let center_line = Line::from_point_angle(support_foot.position, support_foot.rz);
-
-        let mut min_dist = f64::INFINITY;
-        for pt in points {
-            min_dist = min_dist.min(center_line.dist_to_point(pt));
-        }
-
-        let spacing = (min_dist - half_width).max(0.0);
-
-        let epsilon = crate::config::SEPARATION_EPS;
-        let min_allowed = self.config.min_separation - epsilon;
-        let max_allowed = self.config.max_separation + epsilon;
-
-        spacing >= min_allowed && spacing <= max_allowed
+        let pose = self.next(new_pos);
+        constraints::spacing(&pose, self.support_foot(), &self.config).satisfied
     }
 
-    /// 综合约束检查：同时满足 spacing, stride, turn。
+    /// 综合约束检查：同时满足 spacing, stride, turn（**姿态口径 = [`Robot::next`]**）。
+    ///
+    /// 保持 golden 冻结的旧语义，供夹具与对照使用；候选过滤走
+    /// [`Robot::position_check_committed`]。
     pub fn position_check(&self, new_pos: Dot) -> bool {
-        self.satisfy_spacing(new_pos) && self.satisfy_stride(new_pos) && self.satisfy_turn(new_pos)
+        let pose = self.next(new_pos);
+        self.step_verdicts(&pose)
+            .iter()
+            .all(|verdict| verdict.satisfied)
+    }
+
+    /// 候选过滤的**提交口径**：对 `walk_update` 将要提交的姿态判步长 / 转角 / 间距。
+    ///
+    /// `find_path` 的候选集必须走这里。`walk_update` 提交的是 [`Robot::next_committed`] 的
+    /// 姿态，而 [`Robot::position_check`] 用的是 [`Robot::next`] 的姿态，两者最多差半个转角
+    /// （`HEADING_SMOOTHING = 0.5` 的插值幅度）——旧口径下就会出现「按候选姿态判过、按提交
+    /// 姿态越界」。本方法让「判过的姿态」= 「执行的姿态」。
+    pub fn position_check_committed(&self, new_pos: Dot) -> bool {
+        let pose = self.next_committed(new_pos);
+        self.step_verdicts(&pose)
+            .iter()
+            .all(|verdict| verdict.satisfied)
+    }
+
+    /// 提交口径下的「足可站立」：覆盖格全在图内 + 法向角 < `config.max_normal_angle`。
+    ///
+    /// 与 [`Robot::position_check_committed`] 同一个姿态口径；`Foot::standable` 是同一条判定
+    /// 的冻结谓词包装（阈值取默认配置），规划器路径用 `self.config`。
+    pub fn standable_committed(&self, new_pos: Dot, t: &Terrain) -> bool {
+        let pose = self.next_committed(new_pos);
+        constraints::check_standable(&pose, t, &self.config)
+            .iter()
+            .all(|verdict| verdict.satisfied)
+    }
+
+    /// 位置型三条约束的判定（姿态由调用方显式给出）。
+    fn step_verdicts(&self, pose: &Foot) -> [constraints::Verdict; 3] {
+        constraints::check_step(pose, self.swing_foot(), self.support_foot(), &self.config)
     }
 
     /// 生成候选落足点集（原 `walk_candidates`，`src/robot/robot.cpp:661-689`）。
+    ///
+    /// **口径**：每个候选按 [`Robot::position_check_committed`]（提交姿态）过滤，而不是按
+    /// [`Robot::position_check`]（候选姿态）。`walk_to` → `walk_update` 提交的就是提交姿态，
+    /// 两者不一致时旧口径会放进「判过、执行越界」的候选（本次修复）。
     pub fn walk_candidates(&self) -> Vec<Dot> {
         let swing_foot = self.swing_foot();
         let support_foot = self.support_foot();
@@ -260,7 +298,7 @@ impl Robot {
                     swing_foot.position.x() + distance * angle.cos(),
                     swing_foot.position.y() + distance * angle.sin(),
                 );
-                if self.position_check(new_pos) {
+                if self.position_check_committed(new_pos) {
                     candidates.push(new_pos);
                 }
                 angle_offset += angle_resolution;
@@ -327,6 +365,10 @@ impl Robot {
     ///
     /// 【缺陷保留说明】：原实现在目标越界 (434) 或 tick 耗尽 (463) 时静默返回摆动脚当前位置。
     /// 此处保留该对外行为以对齐 baseline，同时在注释与测试中登记。
+    ///
+    /// **口径**：找到的落足点按**提交姿态**判（[`Robot::position_check_committed`] +
+    /// [`Robot::standable_committed`]）——`walk_to` 返回后紧接着就是 `walk_update`，
+    /// 判定的姿态必须与提交的姿态一致。
     pub fn bfs(&self, t: &Terrain, target: Dot) -> Dot {
         let sw = self.swing_foot();
         let rows = t.grid.rows() as i32;
@@ -366,12 +408,12 @@ impl Robot {
                 continue;
             }
 
-            let new_foot = self.next(now);
-            if !self.position_check(now) {
+            let new_foot = self.next_committed(now);
+            if !self.position_check_committed(now) {
                 continue;
             }
 
-            if new_foot.standable(t) {
+            if self.standable_committed(now, t) {
                 return new_foot.position;
             }
 
@@ -533,9 +575,16 @@ impl Robot {
             tick -= 1;
         }
 
+        // 落足台账修正 2：`pend_dots` 里剩下的候选是**上一次迭代为另一只脚**生成的
+        // （每轮迭代末尾都翻脚，能走到这里的只剩奇数迭代遗留的那一个）。直接 `walk_update`
+        // 会把「按 A 脚跟判过的点」落到 B 脚上 —— 又一次「判过的姿态 ≠ 执行的姿态」，
+        // 而 B 脚的实际步长/转角从未被判过。这里按与 `bfs` 相同的提交口径过一遍门禁，
+        // 过不了就不提交（不移动、不写进路径）。
         for dot in pend_dots {
-            self.walk_update(dot);
-            path.push(dot);
+            if self.position_check_committed(dot) && self.standable_committed(dot, t) {
+                self.walk_update(dot);
+                path.push(dot);
+            }
         }
 
         Ok(path)

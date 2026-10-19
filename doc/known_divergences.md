@@ -400,6 +400,88 @@ cargo test -p trapla-core --test port_verification golden_fixture_audit -- --noc
 
 ---
 
+## D6 候选判定改用**提交姿态**（T-2a 修复）+ 收尾落足门禁
+
+### 现象与根因
+
+同一份几何在 `robot.rs` 里有两条姿态推导路径：
+
+- 候选过滤走 `Robot::next`（`rz = 步向`，C++ `robot.cpp:635-646` 的原语义）；
+- 落足提交走 `Robot::next_committed`（`rz` 按 `HEADING_SMOOTHING = 0.5` 向步向插值，路线 B 的朝向解耦）。
+
+`walk_candidates` / `bfs` 用前者判「步长 / 转向 / 间距 / 可站立」，`walk_update` 用后者实际落足 ——
+两者最多差半个转角（±37.5°），于是「判过的姿态」≠「执行的姿态」。间距与法向角都读 `rz`，判据因此失效。
+
+实测（`data/csv/map.csv`，start 0,0 → goal 500,500，seed 42）：独立校验器（`trapla-lab`，不复用 core 谓词）
+在 62 点里报出 **16 步严格越界**（间距 9 + 法向角 8，其中一步两者兼有）；同一条路径上 core 自己的
+`satisfy_spacing` / `Foot::standable` 对 61/61 步判通过 —— 差额全部来自这半个转角的漂移。
+
+同源的第二处：`find_path` 收尾把 `pend_dots` 里剩下的候选交给 `walk_update`，而那个候选是
+**上一次迭代为另一只脚**生成的（每轮迭代末尾都翻脚）。实测在 `bumpy`（size 128，seed 1）上，
+它把摆动脚落到了另一只脚**已经站着**的位置（末端两足重合），并连带让 `--first-moved` 反推的
+奇偶脚映射失效 —— 校验器按错的脚映射重算，报出 5 步「越界」；`trapla-lab` 的
+`rz_reconstruction` 亦在此处量到 8.4e-3 rad 的末态朝向偏差（真实末态与重建末态不符）。
+
+### 修正
+
+1. 新增 `crates/trapla-core/src/constraints.rs`：硬约束的**唯一实现点**，输入是**显式足位姿**
+   （位置 + `rz`），逐条返回「是否满足 + 裕度 + 是哪一条」；阈值只来自 `config`。
+2. `robot.rs` 的 `satisfy_stride/turn/spacing`、`position_check` 变成该模块的**薄包装且语义逐位不变**
+   （仍用 `next` 姿态，golden 夹具钉死）；新增显式命名的提交口径
+   `next_committed` / `position_check_committed` / `standable_committed`。
+3. `walk_candidates` 与 `bfs` 改用提交口径过滤（`next_committed` 的姿态）。
+4. 收尾 `pend_dots` 提交前加同一套门禁（位置三条 + 可站立），过不了就不提交、不写进路径。
+
+C++ 基线在这里**没有可对齐的语义**：它是「用 A 姿态判、用 B 姿态落」，越界是必然而非抖动；
+本项是有意修正，登记于此以免后来者按 baseline 对齐改回去。
+
+### 与冻结夹具的关系
+
+**22 个夹具一个都没翻转**：分歧只在 `find_path` 这一层，而夹具是函数级 oracle
+（`satisfy_*` / `corner` / `cover` / `standable` / `slide` / 几何 / 地形 / A*），
+既有谓词的语义逐位不变。
+
+### 影响面（单次实测，2026-10-19；命令见「强制点」）
+
+| 量 | 修前 | 修后 | 判 |
+|---|---|---|---|
+| 严格越界步数（主判据） | 16（EXIT 2） | **0（EXIT 0）** | 达标 |
+| `steps` | 62 | 66（+6.5%，上限 68.2） | 达标 |
+| `proper_crossings` | 4 | 6 | **变差** |
+| `lateral_min` | 0.8205 | 0.5824 | **变差** |
+| `same_foot_turn` 中位 | +0.0444° | −0.2520° | 变差（仍 ≪ 1°） |
+| `goal_error` | 13.3966 | 12.4556 | 变好 |
+| `total_length` | 1331.18 | 1325.75 | 变好 |
+
+取舍（实测归因，不调参掩盖）：提交口径把「按候选姿态判过、按提交姿态越界」的候选从候选集里剔除，
+候选集缩小 ⇒ `will_feet_cross` 的触发次数从 5 次涨到 20 次（同一命令实测），路径形态随之改变，
+三项软指标变差。本次**不动** `HEADING_SMOOTHING` / `LANE_HALF_WIDTH_CM` 等参数去换回来 ——
+那是另一个决策，且会掩盖候选集缩小这条真因。
+
+### 强制点
+
+- `cargo test -p trapla-core --test constraints_pose_gate`：其中的 `divergence_is_real`
+  构造一个「`position_check`（旧口径）通过、`position_check_committed`（新口径）越界」的候选，
+  断言旧候选集含它、`walk_candidates()` 不含它。只把 `walk_candidates` 改回 `position_check`
+  （保留其余）会让第 ④ 条断言变红；整体撤销则连编译都过不去（`position_check_committed` 不存在）；
+- `cargo run -q -p trapla-lab -- plan --map data/csv/map.csv --start 0,0 --goal 500,500 --seed 42 --out /tmp/x.csv --validate` ⇒ 退出码 0；
+- `cargo run -q -p trapla-lab -- bench --size 200 --seeds 1,2` ⇒ 参考实现 `hard` 列全 0、坏实现仍被判出越界；
+- `cargo test -p trapla-lab --test rz_reconstruction` ⇒ `smoothed` 重建与真实末态逐位一致（收尾门禁那一处已归零）。
+
+### 仍未修 / 已知边界
+
+- `bfs` 停摆时返回 `sw.position`（原 C++ `robot.cpp:463` 的缺陷保留），它**不经过**候选门禁，
+  零位移提交在 |支撑脚 rz| > `max_turn` 时会让校验器判一条 `turn` 越界；
+  实测审计（见下）在验收命令覆盖的 588 次提交里该分支一次未触发，故本次未改其对外行为。
+- `get_target` 的 `little_step` 分支在默认配置下**不可达**：候选距离下界是 `active_distance = 16`，
+  而触发条件是 `distance < 0.3 * about_r() = 0.6`。实测审计中一次未触发（保留原样）。
+
+审计口径：在 `walk_update` 里按提交口径复算三条位置约束，对
+`plan`（主判据）、`bench --size 200 --seeds 1,2`、`rz_reconstruction`（5 个场景）共
+**588 次提交逐次判定，0 次失败**；`little_step` 0 次；`pend_dots` 收尾 2 次，均未通过门禁而未提交。
+
+---
+
 ## 变更记录
 
 | 日期 | 内容 |
@@ -409,3 +491,4 @@ cargo test -p trapla-core --test port_verification golden_fixture_audit -- --noc
 | 2026-10-16 | D4 续（T6f）：陡峭度由断路改为代价（`steep_extend` 不再按 10.0 判死、`scale_star` 加 `PENALTY_K = 3.0`）⇒ 120 组合恢复 72/48、净回归 0；猫步三判据未达标且非一律不劣；耗时 14.5×/29× 仍未达成 |
 | 2026-10-16 | D4 续（T6g）：按缩放节点惰性记忆化 `steep_extend` + 去掉 `heights` 物化 ⇒ **加速比 4.1×/4.9× 达标**，绝对耗时目标「第一例 ≤ 0.030 s」未达成（实测 0.032 s）；**18 个输出 SHA 逐项不变**（纯性能改动） |
 | 2026-10-16 | D5：`standable.csv` 的 `normal_angle` 列退休（C++ `unordered_set` 迭代序 + 顺序敏感 `up_fit` ⇒ 不是可复现 oracle；布尔判定 45/45 一致，夹具不改） |
+| 2026-10-19 | D6：候选过滤改用**提交姿态**（`next_committed`）+ 收尾落足门禁；主判据 16 步越界 → 0（`trapla-lab` 独立校验器），22 个夹具未翻转；`proper_crossings` 4→6、`lateral_min` 0.8205→0.5824 如实登记 |

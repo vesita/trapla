@@ -3,6 +3,8 @@
 //! 本文件是 T1 冻结的模块边界，方法签名一律不许改；实现见 T2/T3/T4。
 //!
 //! - [`config`]：全部阈值的**唯一事实源**（原 C++ 把 40/2/10/75°/20° 散在多处）。
+//! - [`constraints`]：硬约束的**唯一实现点**；姿态（候选 `next` vs 提交 `next_committed`）
+//!   由调用方显式给出，模块自己从不推导。
 //! - [`geom`]：点 / 索引 / 线段 / 平面与平面拟合（原 `geometry.cpp` 的两个同名
 //!   不同语义 `scale()` 在本重写里被消灭：缩放只有 [`geom::index_scale`] 与 [`geom::Idx::central_restore`]）。
 //! - [`grid`]：栅格数据、邻域、代价与降采样。
@@ -16,6 +18,7 @@
 
 pub mod astar;
 pub mod config;
+pub mod constraints;
 pub mod error;
 pub mod foot;
 pub mod geom;

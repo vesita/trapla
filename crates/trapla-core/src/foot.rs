@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::config::{FootShape, MAX_NORMAL_ANGLE_RAD};
+use crate::config::{FootShape, RobotConfig};
 use crate::geom::{Dot, Idx};
 use crate::terrain::Terrain;
 
@@ -104,21 +104,16 @@ impl Foot {
     ///
     /// 原实现 `src/robot/foot.cpp:238-253`：
     /// 先把覆盖点逐个查边界（越界直接返回 false），再通过 `trip` 拟合平面计算法向角，
-    /// 与 [`MAX_NORMAL_ANGLE_RAD`] 严格比较（`<`）。
+    /// 与 [`crate::config::MAX_NORMAL_ANGLE_RAD`] 严格比较（`<`）。
+    ///
+    /// 判定本身在 [`crate::constraints::check_standable`]（硬约束的唯一实现点），这里只是
+    /// 冻结谓词的薄包装。本签名不带配置，阈值取 [`RobotConfig::default`] 的
+    /// `max_normal_angle`（= [`crate::config::MAX_NORMAL_ANGLE_RAD`]）；规划器路径
+    /// （`Robot::bfs`）走 `self.config`，好让 `--overrides` 换掉的阈值对规划器也生效。
     pub fn standable(&self, t: &Terrain) -> bool {
-        let covered = self.cover();
-        let rows = t.grid.rows() as i32;
-        let cols = t.grid.cols() as i32;
-        for idx in &covered {
-            if idx.x < 0 || idx.x >= rows || idx.y < 0 || idx.y >= cols {
-                return false;
-            }
-        }
-        let pts: Vec<Dot> = covered.into_iter().map(|idx| idx.as_dot()).collect();
-        let Ok(angle) = t.normal_angle(&pts) else {
-            return false;
-        };
-        angle < MAX_NORMAL_ANGLE_RAD
+        let config = RobotConfig::default();
+        let verdicts = crate::constraints::check_standable(self, t, &config);
+        crate::constraints::all_satisfied(&verdicts)
     }
 
     /// 在当前位置附近扫描，找出法向角更优的落脚点；必要时返回平移量。
