@@ -143,16 +143,6 @@ impl Terrain {
             None
         }
     }
-
-    /// 最接近 `(row, col)` 的单元格值（坐标先四舍五入再夹到界内）。
-    pub fn value_nearest(&self, row: f64, col: f64) -> f64 {
-        if self.rows == 0 || self.cols == 0 {
-            return 0.0;
-        }
-        let r = (row.round().max(0.0) as usize).min(self.rows - 1);
-        let c = (col.round().max(0.0) as usize).min(self.cols - 1);
-        self.value(r, c).unwrap_or(0.0)
-    }
 }
 
 /// 顺序足中心点序列（原始地图坐标：`x` 是行、`y` 是列）。
@@ -162,6 +152,11 @@ pub struct FootPath {
 }
 
 impl FootPath {
+    /// 空路径：沙盒场景没有 `path.csv`，只有起点 / 目标点标记。
+    pub fn empty() -> Self {
+        Self { points: Vec::new() }
+    }
+
     /// 读 `x,y` 两列；首行是 `x,y` 表头时自动跳过。
     pub fn read_csv(path: &Path) -> Result<Self> {
         let text = read_to_string(path)?;

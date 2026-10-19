@@ -1,10 +1,16 @@
-//! `trapla-viz` 入口：三种模式（交互 / 无头自检 / 截图）共用同一套输入加载。
+//! `trapla-viz` 入口：三种模式（交互 / 无头自检 / 截图）共用同一套场景加载。
+//!
+//! 场景来源有两种（见 [`crate::session`]）：显式 `--map`/`--path` 文件，或
+//! `trapla-lab` 的内置场景（`--scenario` / 交互模式的沙盒菜单）。
 
 mod cli;
 mod data;
+mod menu;
 mod metrics;
 mod orbit_camera;
+mod phase;
 mod scene;
+mod session;
 mod viz;
 
 use std::path::Path;
@@ -13,9 +19,21 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use crate::cli::{Cli, Mode};
-use crate::data::{Foot, FootCounts, FootPath, Terrain, VizError};
-use crate::metrics::MetricsPanel;
-use crate::scene::{auto_stride, build_terrain_mesh, sample_shape, MAX_VERTICES};
+use crate::data::{Foot, VizError};
+use crate::scene::{
+    Downsample, MAX_VERTICES, build_terrain_mesh, median_adjacent_normal_angle_deg,
+    median_high_frequency_cm, sample_shape,
+};
+use crate::session::{SceneInputs, SceneSource};
+
+/// 足朝向重建约定：默认提交语义（`smoothed`）；`raw` 只由负向对照开关打开。
+fn foot_heading(raw: bool) -> trapla_lab::validate::RzConvention {
+    if raw {
+        trapla_lab::validate::RzConvention::Raw
+    } else {
+        trapla_lab::validate::RzConvention::Smoothed
+    }
+}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -30,47 +48,25 @@ fn main() -> ExitCode {
 
 fn run(cli: &Cli) -> Result<(), VizError> {
     let mode = cli.mode().map_err(VizError::Cli)?;
-    let terrain = Terrain::read_csv(&cli.map)?;
-    let path = FootPath::read_csv(&cli.path)?;
-    let metrics = MetricsPanel::load(cli.metrics.as_deref());
-
-    let stride = match cli.stride {
-        None => auto_stride(terrain.rows(), terrain.cols()),
-        Some(0) => {
-            return Err(VizError::Cli(
-                "`--stride` 必须 >= 1；不传表示自动选步长".to_string(),
-            ));
-        }
-        Some(s) => s,
-    };
-    let (n_rows, n_cols) = sample_shape(terrain.rows(), terrain.cols(), stride);
-    if n_rows * n_cols > MAX_VERTICES {
-        eprintln!(
-            "警告: --stride {stride} 产生 {} 个顶点，超过默认上限 {MAX_VERTICES}；显式步长优先，不自动改写",
-            n_rows * n_cols
-        );
-    }
-
-    let goal = cli.goal.map_or_else(
-        || {
-            path.points()
-                .last()
-                .copied()
-                .expect("FootPath::read_csv 保证至少一个点")
-        },
-        |xy| (xy.x, xy.y),
-    );
-
-    let inputs = viz::SceneInputs {
-        terrain,
-        path,
-        metrics,
-        stride,
-        goal,
+    let source = resolve_source(cli, &mode).map_err(VizError::Cli)?;
+    // 视觉参数在所有模式里都先校验（fail-closed）；V1 的默认值不打印任何东西、输出不变。
+    let exaggeration = cli.exaggeration().map_err(VizError::Cli)?;
+    let foot_scale = cli.foot_scale().map_err(VizError::Cli)?;
+    let foot_thickness = cli.foot_thickness().map_err(VizError::Cli)?;
+    let base_depth = cli.base_depth().map_err(VizError::Cli)?;
+    let foot_heading = foot_heading(cli.raw_foot_heading);
+    let downsample = if cli.nearest_sampling {
+        Downsample::Nearest
+    } else {
+        Downsample::WindowMean
     };
 
     match &mode {
-        Mode::HeadlessSelftest => headless_selftest(cli, &inputs),
+        Mode::HeadlessSelftest => {
+            let inputs = session::load(&source)?;
+            headless_selftest(&inputs, exaggeration, downsample, cli.mesh_metrics);
+            Ok(())
+        }
         Mode::Screenshot(png) => {
             // 先删旧文件：否则「文件已存在」会让截图成功判据变成假阳性。
             match std::fs::remove_file(png) {
@@ -80,29 +76,128 @@ fn run(cli: &Cli) -> Result<(), VizError> {
                     return Err(VizError::Graphics(format!(
                         "无法删除旧截图 {}: {e}",
                         png.display()
-                    )))
+                    )));
                 }
             }
-            viz::run(inputs, &mode, cli.frames).map_err(VizError::Graphics)?;
+            let config = viz::RunConfig {
+                mode: mode.clone(),
+                frames: cli.frames,
+                source,
+                // 截图模式默认跳过菜单；`--menu` 是对照开关（用于验证跳过确实生效）。
+                start_in_menu: cli.menu,
+                exaggeration,
+                foot_scale,
+                foot_thickness,
+                base_depth,
+                downsample,
+                foot_heading,
+            };
+            viz::run(config).map_err(VizError::Graphics)?;
             verify_png(png)
         }
-        Mode::Interactive => viz::run(inputs, &mode, cli.frames).map_err(VizError::Graphics),
+        Mode::Interactive => {
+            let config = viz::RunConfig {
+                mode: mode.clone(),
+                frames: cli.frames,
+                source,
+                start_in_menu: cli.menu || !cli.has_explicit_inputs(),
+                exaggeration,
+                foot_scale,
+                foot_thickness,
+                base_depth,
+                downsample,
+                foot_heading,
+            };
+            viz::run(config).map_err(VizError::Graphics)
+        }
+    }
+}
+
+/// 由命令行参数推导场景来源。
+///
+/// - `--map` 与 `--path` 必须同时给；给了就与改动前行为完全一致；
+/// - `--scenario <id>` 用内置场景，与文件输入互斥；
+/// - 交互模式两者都不给 → 进沙盒菜单（菜单选场景）；无头/截图模式则要求显式来源。
+fn resolve_source(cli: &Cli, mode: &Mode) -> Result<SceneSource, String> {
+    let files = match (&cli.map, &cli.path) {
+        (Some(map), Some(path)) => Some(SceneSource::Files {
+            map: map.clone(),
+            path: path.clone(),
+            metrics: cli.metrics.clone(),
+            goal: cli.goal.map(|xy| (xy.x, xy.y)),
+            stride: cli.stride,
+        }),
+        (None, None) => None,
+        (Some(_), None) | (None, Some(_)) => {
+            return Err("`--map` 与 `--path` 必须同时给；只给一个无法确定场景输入".to_string());
+        }
+    };
+
+    if let Some(scenario) = &cli.scenario {
+        if files.is_some() {
+            return Err(
+                "`--scenario` 与 `--map`/`--path` 互斥：一次只能选一种场景来源".to_string(),
+            );
+        }
+        if cli.metrics.is_some() || cli.goal.is_some() || cli.stride.is_some() {
+            return Err(
+                "`--metrics` / `--goal` / `--stride` 只对 `--map`/`--path` 输入有效".to_string(),
+            );
+        }
+        return Ok(SceneSource::Scenario {
+            id: scenario.clone(),
+        });
+    }
+
+    if let Some(files) = files {
+        return Ok(files);
+    }
+
+    match mode {
+        Mode::Interactive => {
+            if cli.metrics.is_some() || cli.goal.is_some() || cli.stride.is_some() {
+                return Err(
+                    "`--metrics` / `--goal` / `--stride` 只对 `--map`/`--path` 输入有效"
+                        .to_string(),
+                );
+            }
+            // 无显式输入：进菜单，默认选中第一个内置场景（菜单里可改）。
+            let id = session::MenuOptions::builtin()
+                .selected_id()
+                .unwrap_or("flat")
+                .to_string();
+            Ok(SceneSource::Scenario { id })
+        }
+        _ => Err(
+            "`--headless-selftest` / `--screenshot` 需要显式场景来源：`--map` 与 `--path` 同时给，或用 `--scenario <id>`"
+                .to_string(),
+        ),
     }
 }
 
 /// 无头自检：不建窗口，加载 + 构建场景 + 打印摘要。
-fn headless_selftest(cli: &Cli, inputs: &viz::SceneInputs) -> Result<(), VizError> {
+///
+/// `mesh_metrics` 打开时**额外**打印一行斑点指标（默认关闭，保证既有验收输出逐行不变）。
+fn headless_selftest(
+    inputs: &SceneInputs,
+    exaggeration: f32,
+    downsample: Downsample,
+    mesh_metrics: bool,
+) {
     let terrain = &inputs.terrain;
     let path = &inputs.path;
     let stride = inputs.stride;
     let (n_rows, n_cols) = sample_shape(terrain.rows(), terrain.cols(), stride);
-    let mesh = build_terrain_mesh(terrain, stride);
-    let counts = FootCounts::of_total(path.len());
+    let mesh = build_terrain_mesh(terrain, stride, exaggeration, downsample);
+    let counts = inputs.foot_counts();
 
     println!("=== trapla-viz 无头自检（未创建窗口） ===");
+    if let Some(detail) = &inputs.scenario_detail {
+        println!("{detail}");
+    }
     println!(
         "地图: {}  行={} 列={} 原始格={}",
-        cli.map.display(),
+        inputs.map_label,
         terrain.rows(),
         terrain.cols(),
         terrain.rows() * terrain.cols()
@@ -120,7 +215,21 @@ fn headless_selftest(cli: &Cli, inputs: &viz::SceneInputs) -> Result<(), VizErro
         mesh.mesh.count_vertices(),
         mesh.triangle_count()
     );
-    println!("路径: {}  点数={}", cli.path.display(), path.len());
+    if mesh_metrics {
+        let mode = match downsample {
+            Downsample::WindowMean => "窗口均值",
+            Downsample::Nearest => "最近邻",
+        };
+        println!(
+            "显示网格法线: 相邻顶点夹角中位数 = {:.4}°（降采样={mode}）",
+            median_adjacent_normal_angle_deg(terrain, stride, downsample)
+        );
+        println!(
+            "显示网格斑纹: 二阶差分中位数 = {:.4} cm（降采样={mode}）",
+            median_high_frequency_cm(terrain, stride, downsample)
+        );
+    }
+    println!("路径: {}  点数={}", inputs.path_label, path.len());
     println!(
         "  {}点数（偶数下标）={}  {}点数（奇数下标）={}",
         Foot::Left.label(),
@@ -144,7 +253,6 @@ fn headless_selftest(cli: &Cli, inputs: &viz::SceneInputs) -> Result<(), VizErro
     );
     println!("指标: {}", inputs.metrics.summary());
     println!("=== 自检结束 ===");
-    Ok(())
 }
 
 /// 截图产物核对：存在、非空、PNG 魔数。
